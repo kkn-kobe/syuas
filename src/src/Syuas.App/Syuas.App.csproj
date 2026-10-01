@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>SYUAS</AssemblyName>
+    <RootNamespace>Syuas.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Syuas.Core/Syuas.Core.csproj" />
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <EmbeddedResource Include="Highlighting/AsciiDoc.xshd" />
+  </ItemGroup>
+</Project>

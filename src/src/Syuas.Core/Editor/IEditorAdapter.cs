@@ -1,0 +1,22 @@
+namespace Syuas.Core.Editor;
+
+// No editor-component types cross this boundary.
+public interface IEditorAdapter
+{
+    event EventHandler? StateChanged;
+    string Text { get; }
+    bool IsModified { get; }
+    bool CanUndo { get; }
+    bool CanRedo { get; }
+    int SelectionStart { get; }
+    int SelectionLength { get; }
+    int Line { get; }
+    int Column { get; }
+    void Load(string text);
+    void MarkSaved();
+    void Select(int start, int length);
+    void Replace(int start, int length, string text);
+    IDisposable BeginUpdate();
+    void Undo();
+    void Redo();
+}

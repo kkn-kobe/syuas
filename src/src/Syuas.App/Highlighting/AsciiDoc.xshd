@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="AsciiDoc" extensions=".adoc;.asciidoc;.ad;.asc" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Title" foreground="#174A8B" fontWeight="bold" />
+  <Color name="Delimiter" foreground="#7752A0" fontWeight="bold" />
+  <Color name="Attribute" foreground="#8A4B12" />
+  <Color name="Macro" foreground="#006C85" />
+  <Color name="Admonition" foreground="#A43D18" fontWeight="bold" />
+  <Color name="Comment" foreground="#65805C" fontStyle="italic" />
+  <Color name="Code" foreground="#536579" />
+  <RuleSet>
+    <Span color="Comment" multiline="true">
+      <Begin>^////\s*$</Begin><End>^////\s*$</End>
+    </Span>
+    <Rule color="Comment">^//.*$</Rule>
+    <Span color="Code" multiline="true">
+      <Begin color="Delimiter">^----\s*$</Begin><End color="Delimiter">^----\s*$</End>
+    </Span>
+    <Span color="Code" multiline="true">
+      <Begin color="Delimiter">^\.\.\.\.\s*$</Begin><End color="Delimiter">^\.\.\.\.\s*$</End>
+    </Span>
+    <Rule color="Title">^={1,6}\s+.+$</Rule>
+    <Rule color="Delimiter">^(\|===|====|____|\*\*\*\*|\+\+\+\+)\s*$</Rule>
+    <Rule color="Attribute">^:[^:\s]+:.*$</Rule>
+    <Rule color="Attribute">^\[[^\]]*\]\s*$</Rule>
+    <Rule color="Macro">\b(include::|image::?|link:|xref:)[^\s\[]+\[[^\]]*\]</Rule>
+    <Rule color="Macro">https?://[^\s\[]+(\[[^\]]*\])?</Rule>
+    <Rule color="Admonition">^(NOTE|TIP|IMPORTANT|CAUTION|WARNING):</Rule>
+  </RuleSet>
+</SyntaxDefinition>

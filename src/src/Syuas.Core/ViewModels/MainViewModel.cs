@@ -1,0 +1,182 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
+using Syuas.Core.Editor;
+using Syuas.Core.Services;
+
+namespace Syuas.Core.ViewModels;
+
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
+{
+    private readonly IEditorAdapter editor;
+    private readonly IFileService files;
+    private readonly IUserDialogs dialogs;
+    private readonly IRecentFilesStore recentStore;
+    private string? filePath;
+    private string searchText = "";
+    private string replacementText = "";
+    private string searchStatus = "";
+    private bool matchCase;
+    private bool isSearchVisible;
+
+    public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore)
+    {
+        this.editor = editor;
+        this.files = files;
+        this.dialogs = dialogs;
+        this.recentStore = recentStore;
+        NewCommand = new(_ => New());
+        OpenCommand = new(_ => { var path = dialogs.ChooseOpenFile(); if (path is not null) Open(path); });
+        OpenRecentCommand = new(p => { if (p is string path) Open(path); });
+        SaveCommand = new(_ => Save());
+        SaveAsCommand = new(_ => Save(true));
+        UndoCommand = new(_ => editor.Undo(), _ => editor.CanUndo);
+        RedoCommand = new(_ => editor.Redo(), _ => editor.CanRedo);
+        FindNextCommand = new(_ => FindNext(), _ => SearchText.Length > 0);
+        ReplaceCommand = new(_ => Replace(), _ => SearchText.Length > 0);
+        ReplaceAllCommand = new(_ => ReplaceAll(), _ => SearchText.Length > 0);
+        editor.StateChanged += EditorStateChanged;
+        try { foreach (var path in recentStore.Load()) RecentFiles.Add(path); }
+        catch (Exception e) when (IsStorageError(e) || e is JsonException) { /* History must not prevent editing. */ }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public ObservableCollection<string> RecentFiles { get; } = [];
+    public RelayCommand NewCommand { get; }
+    public RelayCommand OpenCommand { get; }
+    public RelayCommand OpenRecentCommand { get; }
+    public RelayCommand SaveCommand { get; }
+    public RelayCommand SaveAsCommand { get; }
+    public RelayCommand UndoCommand { get; }
+    public RelayCommand RedoCommand { get; }
+    public RelayCommand FindNextCommand { get; }
+    public RelayCommand ReplaceCommand { get; }
+    public RelayCommand ReplaceAllCommand { get; }
+    public string? FilePath => filePath;
+    public string DocumentName => filePath is null ? "無題" : Path.GetFileName(filePath);
+    public string Title => $"{(editor.IsModified ? "* " : "")}{DocumentName} — SYUAS";
+    public string Position => $"Ln {editor.Line}, Col {editor.Column}";
+    public string DocumentStatus => editor.IsModified ? "未保存の変更" : "保存済み";
+    public string SearchText { get => searchText; set { searchText = value; SearchStatus = ""; Changed(); RefreshSearch(); } }
+    public string ReplacementText { get => replacementText; set { replacementText = value; Changed(); } }
+    public bool MatchCase { get => matchCase; set { matchCase = value; SearchStatus = ""; Changed(); } }
+    public bool IsSearchVisible { get => isSearchVisible; set { isSearchVisible = value; Changed(); } }
+    public string SearchStatus { get => searchStatus; private set { searchStatus = value; Changed(); } }
+
+    public bool CanClose() => ConfirmDiscard();
+
+    public bool New()
+    {
+        if (!ConfirmDiscard()) return false;
+        filePath = null;
+        editor.Load("");
+        DocumentChanged();
+        return true;
+    }
+
+    public bool Open(string path)
+    {
+        if (!ConfirmDiscard()) return false;
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var text = files.Read(fullPath);
+            filePath = fullPath;
+            editor.Load(text);
+            Remember(fullPath);
+            DocumentChanged();
+            return true;
+        }
+        catch (Exception e) when (IsStorageError(e))
+        {
+            dialogs.ShowError($"ファイルを開けませんでした。UTF-8のファイルを選択してください。\n{e.Message}");
+            return false;
+        }
+    }
+
+    public bool Save(bool saveAs = false)
+    {
+        var path = saveAs || filePath is null ? dialogs.ChooseSaveFile(filePath) : filePath;
+        if (path is null) return false;
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            files.Write(fullPath, editor.Text);
+            filePath = fullPath;
+            editor.MarkSaved();
+            Remember(fullPath);
+            DocumentChanged();
+            return true;
+        }
+        catch (Exception e) when (IsStorageError(e))
+        {
+            dialogs.ShowError($"保存できませんでした。変更内容はエディタに残っています。\n{e.Message}");
+            return false;
+        }
+    }
+
+    private bool ConfirmDiscard() => !editor.IsModified || dialogs.ConfirmSave(DocumentName) switch
+    {
+        SaveDecision.Save => Save(),
+        SaveDecision.Discard => true,
+        _ => false
+    };
+
+    private void Remember(string path)
+    {
+        for (var i = RecentFiles.Count - 1; i >= 0; i--)
+            if (string.Equals(RecentFiles[i], path, StringComparison.OrdinalIgnoreCase)) RecentFiles.RemoveAt(i);
+        RecentFiles.Insert(0, path);
+        while (RecentFiles.Count > 10) RecentFiles.RemoveAt(10);
+        try { recentStore.Save(RecentFiles.ToArray()); }
+        catch (Exception e) when (IsStorageError(e)) { /* Document save succeeded; history is best effort. */ }
+    }
+
+    public void FindNext()
+    {
+        if (SearchText.Length == 0) return;
+        var index = TextSearch.FindNext(editor.Text, SearchText, editor.SelectionStart + editor.SelectionLength, MatchCase);
+        SearchStatus = index < 0 ? "見つかりません" : "";
+        if (index >= 0) editor.Select(index, SearchText.Length);
+    }
+
+    private void Replace()
+    {
+        if (SearchText.Length == 0) return;
+        var selected = editor.Text.Substring(editor.SelectionStart, editor.SelectionLength);
+        if (string.Equals(selected, SearchText, MatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
+        {
+            var start = editor.SelectionStart;
+            using (editor.BeginUpdate()) editor.Replace(start, editor.SelectionLength, ReplacementText);
+            editor.Select(start + ReplacementText.Length, 0);
+        }
+        FindNext();
+    }
+
+    private void ReplaceAll()
+    {
+        var matches = TextSearch.FindAll(editor.Text, SearchText, MatchCase);
+        using (editor.BeginUpdate())
+            foreach (var index in matches.Reverse()) editor.Replace(index, SearchText.Length, ReplacementText);
+        SearchStatus = $"{matches.Count} 件を置換しました";
+    }
+
+    private void EditorStateChanged(object? sender, EventArgs e)
+    {
+        Changed(nameof(Title)); Changed(nameof(Position)); Changed(nameof(DocumentStatus));
+        UndoCommand.Refresh(); RedoCommand.Refresh();
+    }
+
+    private void DocumentChanged()
+    {
+        Changed(nameof(FilePath)); Changed(nameof(DocumentName)); Changed(nameof(Title));
+        SearchStatus = "";
+    }
+
+    private void RefreshSearch() { FindNextCommand.Refresh(); ReplaceCommand.Refresh(); ReplaceAllCommand.Refresh(); }
+    private static bool IsStorageError(Exception e) => e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
+    private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
+    public void Dispose() => editor.StateChanged -= EditorStateChanged;
+}
