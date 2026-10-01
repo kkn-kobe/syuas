@@ -48,6 +48,33 @@
         <MenuItem Header="置換(_H)..." Click="OnReplace" InputGestureText="Ctrl+H" />
         <MenuItem Header="次を検索(_N)" Command="{Binding FindNextCommand}" InputGestureText="F3" />
       </MenuItem>
+      <MenuItem Header="挿入(_I)">
+        <MenuItem Header="見出し…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Heading" />
+        <MenuItem Header="画像…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Image" />
+        <MenuItem Header="外部ファイル参照 (include)…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Include" />
+        <MenuItem Header="リンク…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Link" />
+        <MenuItem Header="相互参照 (xref)…" Command="{Binding Assistance.InsertCommand}" CommandParameter="CrossReference" />
+        <MenuItem Header="アンカー / ID…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Anchor" />
+        <Separator />
+        <MenuItem Header="ソースブロック…" Command="{Binding Assistance.InsertCommand}" CommandParameter="SourceBlock" />
+        <MenuItem Header="Admonition…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Admonition" />
+        <MenuItem Header="リスト">
+          <MenuItem Header="箇条書き" Command="{Binding Assistance.InsertCommand}" CommandParameter="UnorderedList" />
+          <MenuItem Header="番号付きリスト" Command="{Binding Assistance.InsertCommand}" CommandParameter="OrderedList" />
+          <MenuItem Header="チェックリスト" Command="{Binding Assistance.InsertCommand}" CommandParameter="Checklist" />
+        </MenuItem>
+        <MenuItem Header="ブロック">
+          <MenuItem Header="Listing Block" Command="{Binding Assistance.InsertCommand}" CommandParameter="ListingBlock" />
+          <MenuItem Header="Literal Block" Command="{Binding Assistance.InsertCommand}" CommandParameter="LiteralBlock" />
+          <MenuItem Header="Quote Block" Command="{Binding Assistance.InsertCommand}" CommandParameter="QuoteBlock" />
+          <MenuItem Header="Example Block" Command="{Binding Assistance.InsertCommand}" CommandParameter="ExampleBlock" />
+        </MenuItem>
+      </MenuItem>
+      <MenuItem Header="書式(_O)">
+        <MenuItem Header="太字 (Bold)" Command="{Binding Assistance.InsertCommand}" CommandParameter="Bold" />
+        <MenuItem Header="斜体 (Italic)" Command="{Binding Assistance.InsertCommand}" CommandParameter="Italic" />
+        <MenuItem Header="等幅 (Monospace)" Command="{Binding Assistance.InsertCommand}" CommandParameter="Monospace" />
+      </MenuItem>
       <MenuItem Header="表示(_V)">
         <MenuItem Header="行番号" IsCheckable="True" IsChecked="{Binding ShowLineNumbers, ElementName=Editor}" />
         <MenuItem Header="右端で折り返す" IsCheckable="True" IsChecked="{Binding WordWrap, ElementName=Editor}" />
@@ -64,6 +91,16 @@
         <Button Content="やり直し" Command="{Binding RedoCommand}" />
         <Separator />
         <Button Content="検索 / 置換" Click="OnFind" />
+        <Separator />
+        <Button Content="見出し" Command="{Binding Assistance.InsertCommand}" CommandParameter="Heading" />
+        <Button Content="画像" Command="{Binding Assistance.InsertCommand}" CommandParameter="Image" />
+        <Button Content="Include" Command="{Binding Assistance.InsertCommand}" CommandParameter="Include" />
+        <Button Content="リンク" Command="{Binding Assistance.InsertCommand}" CommandParameter="Link" />
+        <Button Content="コード" Command="{Binding Assistance.InsertCommand}" CommandParameter="SourceBlock" />
+        <Separator />
+        <Button Content="B" FontWeight="Bold" ToolTip="太字" Command="{Binding Assistance.InsertCommand}" CommandParameter="Bold" />
+        <Button Content="I" FontStyle="Italic" ToolTip="斜体" Command="{Binding Assistance.InsertCommand}" CommandParameter="Italic" />
+        <Button Content="等幅" ToolTip="Monospace" Command="{Binding Assistance.InsertCommand}" CommandParameter="Monospace" />
       </ToolBar>
     </ToolBarTray>
     <StatusBar DockPanel.Dock="Bottom" Background="#E9EEF5" Padding="8,4">

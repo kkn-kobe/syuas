@@ -21,12 +21,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool matchCase;
     private bool isSearchVisible;
 
-    public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore)
+    public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
     {
         this.editor = editor;
         this.files = files;
         this.dialogs = dialogs;
         this.recentStore = recentStore;
+        if (inputDialogs is not null) Assistance = new(editor, () => FilePath, inputDialogs);
         NewCommand = new(_ => New());
         OpenCommand = new(_ => { var path = dialogs.ChooseOpenFile(); if (path is not null) Open(path); });
         OpenRecentCommand = new(p => { if (p is string path) Open(path); });
@@ -43,6 +44,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    public InputAssistanceViewModel? Assistance { get; }
     public ObservableCollection<string> RecentFiles { get; } = [];
     public RelayCommand NewCommand { get; }
     public RelayCommand OpenCommand { get; }

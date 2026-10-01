@@ -24,7 +24,8 @@ public partial class MainWindow : Window
         Editor.Options.ConvertTabsToSpaces = false;
         adapter = new(Editor);
         viewModel = new(adapter, new Utf8FileService(), new WindowsDialogs(this),
-            new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")));
+            new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this));
+        viewModel.Assistance!.FocusRequested += (_, _) => Editor.Focus();
         DataContext = viewModel;
     }
 
@@ -92,5 +93,5 @@ public partial class MainWindow : Window
     }
 
     private void OnAbout(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 1 — エディタ基盤\n.NET 8 / WPF / AvalonEdit", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
+        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 2 — 基本入力補助\n.NET 8 / WPF / AvalonEdit", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
 }
