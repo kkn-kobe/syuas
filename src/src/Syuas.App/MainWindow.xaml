@@ -44,6 +44,8 @@
         <MenuItem Header="元に戻す(_U)" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z" />
         <MenuItem Header="やり直し(_R)" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y" />
         <Separator />
+        <MenuItem x:Name="EditTableMenu" Header="表を再編集…" Command="{Binding EditTableCommand}" ToolTip="表の中にカーソルを置くか、1つの表の中を選択してください。" />
+        <Separator />
         <MenuItem Header="切り取り(_T)" Command="ApplicationCommands.Cut" CommandTarget="{Binding ElementName=Editor}" />
         <MenuItem Header="コピー(_C)" Command="ApplicationCommands.Copy" CommandTarget="{Binding ElementName=Editor}" />
         <MenuItem Header="貼り付け(_P)" Command="ApplicationCommands.Paste" CommandTarget="{Binding ElementName=Editor}" />
@@ -191,7 +193,7 @@
                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                        AutomationProperties.Name="AsciiDoc ソースエディタ">
       <avalon:TextEditor.ContextMenu>
-        <ContextMenu>
+        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
           <MenuItem Command="ApplicationCommands.Undo" />
           <MenuItem Command="ApplicationCommands.Redo" />
           <Separator />
@@ -199,6 +201,8 @@
           <MenuItem Command="ApplicationCommands.Copy" />
           <MenuItem Command="ApplicationCommands.Paste" />
           <MenuItem Command="ApplicationCommands.SelectAll" />
+          <Separator />
+          <MenuItem x:Name="EditTableContextMenu" Header="表を再編集…" Command="{Binding EditTableCommand}" ToolTip="現在のカーソル・選択範囲の表を再編集します。" />
         </ContextMenu>
       </avalon:TextEditor.ContextMenu>
     </avalon:TextEditor>

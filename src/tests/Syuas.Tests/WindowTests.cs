@@ -7,6 +7,7 @@ using Syuas.Core.ViewModels;
 using Syuas.App;
 using Syuas.App.Views;
 using Syuas.Core.Models;
+using Syuas.Core.Services;
 
 namespace Syuas.Tests;
 
@@ -78,6 +79,13 @@ public sealed class WindowTests
         Assert.Equal(5, Descendants<Button>(externalBanner).Count());
         if (Environment.GetEnvironmentVariable("SYUAS_EXTERNAL_BANNER_SCREENSHOT") is { Length: > 0 } bannerImage)
             RenderScreenshot(content, window.Background, 1120, 700, bannerImage);
+        var editTableMenu = Assert.IsType<MenuItem>(window.FindName("EditTableMenu"));
+        Assert.Same(model.EditTableCommand, editTableMenu.Command);
+        sourceEditor.ContextMenu.PlacementTarget = sourceEditor;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var contextEditTable = Assert.Single(sourceEditor.ContextMenu.Items.OfType<MenuItem>(), item => item.Name == "EditTableContextMenu");
+        Assert.Same(model.EditTableCommand, contextEditTable.Command);
+        Assert.True(contextEditTable.Command.CanExecute(null));
         window.Close();
 
         var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
@@ -242,6 +250,10 @@ public sealed class WindowTests
 
         var tableModel = new TableDesignerViewModel();
         var tableDialog = new TableDesignerDialog(tableModel);
+        tableDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Assert.Equal("表デザイナー", tableDialog.Title);
+        Assert.Equal("挿入", Assert.IsType<Button>(tableDialog.FindName("ConfirmButton")).Content);
+        Assert.Equal(Visibility.Collapsed, Assert.IsType<TextBlock>(tableDialog.FindName("EditHint")).Visibility);
         var tablePanel = (FrameworkElement)tableDialog.Content;
         tablePanel.Measure(new Size(1010, 700));
         tablePanel.Arrange(new Rect(0, 0, 1010, 700));
@@ -292,8 +304,87 @@ public sealed class WindowTests
         Assert.False(tableModel.HasHeader);
         Assert.False(headerCheckBox.IsChecked);
         tableDialog.Close();
+        VerifyTableEditingDialog();
         if (Environment.GetEnvironmentVariable("SYUAS_WEBVIEW_SMOKE") is { Length: > 0 } smokeFolder) VerifyWebPreview(smokeFolder);
     });
+
+    private static void VerifyTableEditingDialog()
+    {
+        var definition = new TableDefinition(4, 3) { Title = "操作一覧", HasHeader = true };
+        definition.SetColumnWidth(1, "2");
+        definition.CellAt(0, 0).Text = "機能";
+        definition.CellAt(0, 1).Text = "説明";
+        definition.CellAt(0, 2).Text = "備考";
+        definition.CellAt(1, 0).Text = "再編集";
+        definition.CellAt(2, 0).Text = "セル結合";
+        definition.Merge(new(1, 1, 2, 2));
+        definition.CellAt(1, 1).Text = "既存の結合セルも読み戻せます。\n文章を修正して適用してください。";
+        var parsed = AsciiDocTableParser.Parse(AsciiDocTableGenerator.Generate(definition));
+        Assert.True(parsed.Succeeded);
+        var viewModel = new TableDesignerViewModel(definition: parsed.Definition, sourceLine: 12,
+            applyEdit: () => new(TableEditApplyStatus.Rejected, new(TableEditDiagnosticCode.DocumentChanged,
+                "表を開いた後に文書が変更されています。適用せずに表を開き直してください。")));
+        var dialog = new TableDesignerDialog(viewModel);
+        var panel = (FrameworkElement)dialog.Content;
+        panel.Measure(new Size(1010, 720)); panel.Arrange(new Rect(0, 0, 1010, 720));
+        dialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        panel.UpdateLayout();
+        Assert.Equal("表を再編集 — SYUAS", dialog.Title);
+        var confirm = Assert.IsType<Button>(dialog.FindName("ConfirmButton"));
+        Assert.Equal("適用", confirm.Content);
+        Assert.Same(viewModel.ConfirmCommand, confirm.Command);
+        Assert.True(Assert.IsType<Button>(dialog.FindName("CancelButton")).IsCancel);
+        var hint = Assert.IsType<TextBlock>(dialog.FindName("EditHint"));
+        Assert.Equal(Visibility.Visible, hint.Visibility);
+        Assert.Contains("12行目", hint.Text);
+        var grid = Assert.IsType<Grid>(dialog.FindName("CellGrid"));
+        Assert.Single(grid.Children.OfType<Border>(), border => Grid.GetRowSpan(border) == 2 && Grid.GetColumnSpan(border) == 2);
+        Assert.Equal("機能", Descendants<TextBox>(grid).First().Text);
+        if (Environment.GetEnvironmentVariable("SYUAS_TABLE_EDIT_SCREENSHOT") is { Length: > 0 } screenshot)
+            RenderScreenshot(panel, dialog.Background, 1010, 720, screenshot);
+        viewModel.ConfirmCommand.Execute(null); // Rejection must not request DialogResult/close.
+        dialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        panel.UpdateLayout();
+        var error = Assert.IsType<TextBlock>(dialog.FindName("ErrorText"));
+        Assert.Contains("開き直して", error.Text);
+        Assert.True(error.ActualHeight > 0);
+        Assert.Equal("機能", Descendants<TextBox>(grid).First().Text);
+        panel.Measure(new Size(768, 520)); panel.Arrange(new Rect(0, 0, 768, 520)); panel.UpdateLayout();
+        Assert.True(grid.Parent is ScrollViewer scroll && scroll.ActualHeight > 80);
+        Assert.True(confirm.ActualWidth > 0);
+        if (Environment.GetEnvironmentVariable("SYUAS_TABLE_EDIT_ERROR_SCREENSHOT") is { Length: > 0 } errorScreenshot)
+            RenderScreenshot(panel, dialog.Background, 768, 520, errorScreenshot);
+        dialog.Close();
+
+        // Exercise the real WPF modal close bridge invisibly, including rejection then retry.
+        var attempts = 0;
+        var modalModel = new TableDesignerViewModel(applyEdit: () => ++attempts == 1
+            ? new(TableEditApplyStatus.Rejected, new(TableEditDiagnosticCode.InvalidTable, "入力を確認してください。"))
+            : new(TableEditApplyStatus.Applied));
+        var modal = new TableDesignerDialog(modalModel) { Opacity = 0, ShowActivated = false };
+        Exception? failure = null;
+        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        timeout.Tick += (_, _) => { failure ??= new TimeoutException("Table modal did not close"); modal.Close(); };
+        _ = modal.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                modalModel.ConfirmCommand.Execute(null);
+                Assert.True(modal.IsVisible);
+                Assert.Contains("入力を確認", modalModel.Error);
+                modalModel.Cells[0].Text = "修正";
+                modalModel.ConfirmCommand.Execute(null);
+            }
+            catch (Exception error) { failure = error; modal.Close(); }
+        }));
+        timeout.Start();
+        bool? accepted;
+        try { accepted = modal.ShowDialog(); }
+        finally { timeout.Stop(); }
+        if (failure is not null) throw new InvalidOperationException("Table editing dialog failed", failure);
+        Assert.True(accepted);
+        Assert.Equal(2, attempts);
+    }
 
     private static void VerifyWebPreview(string directory)
     {

@@ -32,7 +32,8 @@ public partial class MainWindow : Window
         adapter = new(Editor);
         var files = new Utf8FileService();
         viewModel = new(adapter, files, new WindowsDialogs(this),
-            new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this));
+            new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this), new TableEditingDialogs(this));
+        viewModel.EditorFocusRequested += OnEditorFocusRequested;
         viewModel.Assistance!.FocusRequested += (_, _) => Editor.Focus();
         viewModel.Structure.FocusRequested += (_, _) => Editor.Focus();
         Editor.TextChanged += OnSourceChanged;
@@ -82,9 +83,11 @@ public partial class MainWindow : Window
         recoveryUpdate.Stop(); recoveryUpdate.Tick -= OnRecoveryTick;
         documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
         Editor.TextChanged -= OnSourceChanged; viewModel.PropertyChanged -= OnViewModelChanged;
+        viewModel.EditorFocusRequested -= OnEditorFocusRequested;
         HtmlPreview.Dispose(); viewModel.Dispose(); adapter.Dispose();
     }
     private async void OnRecoveryTick(object? sender, EventArgs e) => await viewModel.TickRecoveryAsync();
+    private void OnEditorFocusRequested(object? sender, EventArgs e) => Editor.Focus();
     private async void OnExternalTick(object? sender, EventArgs e) => await viewModel.CheckExternalChangesAsync();
     private async void OnActivated(object? sender, EventArgs e) => await viewModel.CheckExternalChangesAsync(force: true);
     private async void OnCheckExternal(object sender, RoutedEventArgs e) => await viewModel.CheckExternalChangesAsync(force: true);

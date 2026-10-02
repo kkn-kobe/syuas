@@ -15,6 +15,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly IFileService files;
     private readonly IUserDialogs dialogs;
     private readonly IRecentFilesStore recentStore;
+    private readonly ITableEditingDialogs? tableDialogs;
+    private readonly TableEditingService tableEditing;
+    private bool isTableEditing;
     private string searchText = "";
     private string replacementText = "";
     private string searchStatus = "";
@@ -27,7 +30,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private ExternalChangeService? externalChanges;
     private bool disposed;
 
-    public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
+    public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore,
+        IInputAssistanceDialogs? inputDialogs = null, ITableEditingDialogs? tableDialogs = null)
     {
         this.editor = editor;
         this.files = files;
@@ -35,6 +39,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         documents.SessionChanged += OnSessionChanged;
         this.dialogs = dialogs;
         this.recentStore = recentStore;
+        this.tableDialogs = tableDialogs;
+        tableEditing = new(editor, () => Session);
+        EditTableCommand = new(_ => EditTable(), _ => tableDialogs is not null && !IsRecoveryBusy && !IsTableEditing && !disposed);
         Structure = new(editor);
         if (inputDialogs is not null) Assistance = new(editor, () => FilePath, inputDialogs);
         NewCommand = new(_ => New());
@@ -55,6 +62,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler? EditorFocusRequested;
     public InputAssistanceViewModel? Assistance { get; }
     public DocumentStructureViewModel Structure { get; }
     public ObservableCollection<string> RecentFiles { get; } = [];
@@ -65,6 +73,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand SaveAsCommand { get; }
     public RelayCommand UndoCommand { get; }
     public RelayCommand RedoCommand { get; }
+    public RelayCommand EditTableCommand { get; }
     public RelayCommand FindNextCommand { get; }
     public RelayCommand ReplaceCommand { get; }
     public RelayCommand ReplaceAllCommand { get; }
@@ -82,9 +91,34 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsSearchVisible { get => isSearchVisible; set { isSearchVisible = value; Changed(); } }
     public bool IsPreviewVisible { get => isPreviewVisible; set { isPreviewVisible = value; Changed(); } }
     public string SearchStatus { get => searchStatus; private set { searchStatus = value; Changed(); } }
-    public bool IsRecoveryBusy { get => isRecoveryBusy; private set { isRecoveryBusy = value; Changed(); } }
+    public bool IsRecoveryBusy { get => isRecoveryBusy; private set { isRecoveryBusy = value; Changed(); EditTableCommand.Refresh(); } }
+    public bool IsTableEditing { get => isTableEditing; private set { isTableEditing = value; Changed(); EditTableCommand.Refresh(); } }
     public string RecoveryStatus { get => recoveryStatus; private set { recoveryStatus = value; Changed(); } }
     public bool HasRecovery => recovery is not null;
+
+    private void EditTable()
+    {
+        if (!EditTableCommand.CanExecute(null)) return;
+        IsTableEditing = true;
+        try
+        {
+            var started = tableEditing.BeginEdit();
+            if (!started.Succeeded)
+            {
+                dialogs.ShowInformation($"表を再編集できませんでした。\n{started.Diagnostic?.DisplayMessage}");
+                return;
+            }
+            var context = started.Context;
+            var model = new TableDesignerViewModel(context.Range.NewLine, context.Definition,
+                () => tableEditing.Apply(context), context.Range.StartLine);
+            tableDialogs!.Show(model);
+        }
+        finally
+        {
+            IsTableEditing = false;
+            if (!disposed) EditorFocusRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
     public bool IsExternalChangeVisible => externalChanges?.IsNotificationVisible == true;
     public bool HasExternalChange => externalChanges?.Current is { Status: not FileComparisonStatus.Unchanged };
     public bool CanReadExternalFile => externalChanges?.Current?.Status == FileComparisonStatus.Modified;
@@ -123,7 +157,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ReloadFromDisk()
     {
         var path = FilePath;
-        if (path is null || IsRecoveryBusy || !ConfirmDiscard()) return false;
+        if (path is null || IsRecoveryBusy || IsTableEditing || !ConfirmDiscard()) return false;
         try
         {
             // Read successfully before changing text, Undo history or the recovery copy.
@@ -192,7 +226,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task<bool> RestoreRecoveryAsync(RecoveryKey key)
     {
-        if (recovery is null || IsRecoveryBusy || !ConfirmDiscard()) return false;
+        if (recovery is null || IsRecoveryBusy || IsTableEditing || !ConfirmDiscard()) return false;
         IsRecoveryBusy = true;
         try
         {
@@ -212,7 +246,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task DiscardRecoveryAsync(RecoveryKey key)
     {
-        if (recovery is null || IsRecoveryBusy) return;
+        if (recovery is null || IsRecoveryBusy || IsTableEditing) return;
         IsRecoveryBusy = true;
         try { await recovery.DiscardAsync(key); }
         finally { IsRecoveryBusy = false; }
@@ -227,11 +261,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             dialogs.ShowInformation("復元用コピーの整理を完了できませんでした。\n次回起動時に、保存済み・破棄済みの文書が復元候補に再表示される場合があります。内容を確認して不要な候補を破棄してください。\n元ファイルへの保存結果は変わりません。詳しくは「ヘルプ → 自動復元と外部変更の使い方」を参照してください。");
     }
 
-    public bool CanClose() => !IsRecoveryBusy && ConfirmDiscard();
+    public bool CanClose() => !IsRecoveryBusy && !IsTableEditing && ConfirmDiscard();
 
     public bool New()
     {
-        if (IsRecoveryBusy || !ConfirmDiscard()) return false;
+        if (IsRecoveryBusy || IsTableEditing || !ConfirmDiscard()) return false;
         documents.New();
         DocumentChanged();
         return true;
@@ -239,7 +273,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool Open(string path)
     {
-        if (IsRecoveryBusy || !ConfirmDiscard()) return false;
+        if (IsRecoveryBusy || IsTableEditing || !ConfirmDiscard()) return false;
         try
         {
             var fullPath = Path.GetFullPath(path);
@@ -257,7 +291,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool Save(bool saveAs = false)
     {
-        if (IsRecoveryBusy) return false;
+        if (IsRecoveryBusy || IsTableEditing) return false;
         var path = saveAs || FilePath is null ? dialogs.ChooseSaveFile(FilePath) : FilePath;
         if (path is null) return false;
         try
@@ -398,6 +432,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         disposed = true;
+        EditTableCommand.Refresh();
         if (externalChanges is not null)
         {
             externalChanges.StateChanged -= OnExternalChangeState;

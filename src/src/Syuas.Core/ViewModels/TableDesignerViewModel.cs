@@ -20,14 +20,20 @@ public sealed class TableCellViewModel(TableCell cell, TableDefinition table, Ac
 public sealed class TableDesignerViewModel : ObservableObject
 {
     private readonly string newLine;
+    private readonly Func<TableEditApplyResult>? applyEdit;
+    private readonly int sourceLine;
+    private bool applying;
     private string rowsInput;
     private string columnsInput;
     private int anchorRow;
     private int anchorColumn;
 
-    public TableDesignerViewModel(string newLine = "\n", TableDefinition? definition = null)
+    public TableDesignerViewModel(string newLine = "\n", TableDefinition? definition = null,
+        Func<TableEditApplyResult>? applyEdit = null, int sourceLine = 1)
     {
         this.newLine = newLine;
+        this.applyEdit = applyEdit;
+        this.sourceLine = sourceLine;
         Definition = definition ?? new();
         rowsInput = Definition.RowCount.ToString(); columnsInput = Definition.ColumnCount.ToString();
         Selection = new(0, 0, 1, 1);
@@ -43,13 +49,17 @@ public sealed class TableDesignerViewModel : ObservableObject
         DeleteRowCommand = new(_ => Mutate(() => Definition.DeleteRow(Selection.Row)), _ => Definition.RowCount > 1);
         AddColumnCommand = new(_ => Mutate(() => Definition.InsertColumn(Selection.LastColumn + 1)), _ => Definition.ColumnCount < TableDefinition.MaxColumns);
         DeleteColumnCommand = new(_ => Mutate(() => Definition.DeleteColumn(Selection.Column)), _ => Definition.ColumnCount > 1);
-        InsertCommand = new(_ => CloseRequested?.Invoke(this, EventArgs.Empty), _ => Snippet is not null);
+        ConfirmCommand = new(_ => Confirm(), _ => Snippet is not null && !applying);
         Rebuild();
     }
 
     public event EventHandler? StructureChanged;
     public event EventHandler? CloseRequested;
     public TableDefinition Definition { get; }
+    public bool IsEditing => applyEdit is not null;
+    public string DialogTitle => IsEditing ? "表を再編集 — SYUAS" : "表デザイナー";
+    public string ConfirmLabel => IsEditing ? "適用" : "挿入";
+    public string EditHint => $"文書の{sourceLine}行目からの表を編集中です。「適用」で元の表を更新します。\nセル内はAsciiDocソースです。&#124; などの文字参照はそのまま保持されます。";
     public IReadOnlyList<TableCellViewModel> Cells { get; private set; } = [];
     public IReadOnlyList<InputField> ColumnWidths { get; private set; } = [];
     public TableSelection Selection { get; private set; }
@@ -77,7 +87,30 @@ public sealed class TableDesignerViewModel : ObservableObject
     public RelayCommand DeleteRowCommand { get; }
     public RelayCommand AddColumnCommand { get; }
     public RelayCommand DeleteColumnCommand { get; }
-    public RelayCommand InsertCommand { get; }
+    public RelayCommand ConfirmCommand { get; }
+    public RelayCommand InsertCommand => ConfirmCommand;
+
+    private void Confirm()
+    {
+        if (!ConfirmCommand.CanExecute(null)) return;
+        applying = true;
+        ConfirmCommand.Refresh();
+        try
+        {
+            if (applyEdit is not null)
+            {
+                var result = applyEdit();
+                if (!result.Succeeded)
+                {
+                    Error = result.Diagnostic?.DisplayMessage ?? "表を適用できませんでした。入力内容を確認してください。";
+                    Changed(nameof(Error));
+                    return;
+                }
+            }
+            CloseRequested?.Invoke(this, EventArgs.Empty);
+        }
+        finally { applying = false; ConfirmCommand.Refresh(); }
+    }
 
     public void SelectCell(int row, int column, bool extend = false)
     {

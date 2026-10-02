@@ -13,7 +13,11 @@ public enum TableEditDiagnosticCode
 
 // Positions are one-based document positions. ParseCode preserves a parser-specific diagnosis.
 public sealed record TableEditDiagnostic(TableEditDiagnosticCode Code, string Message, int Line = 1, int Column = 1,
-    TableParseDiagnosticCode? ParseCode = null);
+    TableParseDiagnosticCode? ParseCode = null)
+{
+    public string DisplayMessage => Code is TableEditDiagnosticCode.DocumentChanged or TableEditDiagnosticCode.ForeignContext
+        ? Message : $"{Message}\n場所: {Line}行 {Column}列";
+}
 
 public sealed record TableLocationResult(TableSourceRange? Range, TableEditDiagnostic? Diagnostic)
 {
