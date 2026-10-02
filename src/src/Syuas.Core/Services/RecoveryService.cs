@@ -9,10 +9,16 @@ public sealed class RecoveryService : IDisposable
     private readonly TimeProvider clock;
     private readonly IFileService files;
     private Task tail = Task.CompletedTask;
-    private DocumentSession? tracked;
-    private DateTimeOffset? firstUnwritten, lastChange, lastAttempt;
-    private long? writtenRevision;
-    private bool writing, stopped, disposed;
+    private Guid? currentDocument;
+    private readonly Dictionary<Guid, TrackingState> trackedDocuments = [];
+    private sealed class TrackingState
+    {
+        public DocumentSession Session { get; set; } = null!;
+        public DateTimeOffset? FirstUnwritten, LastChange, LastAttempt;
+        public long? WrittenRevision;
+        public bool Writing;
+    }
+    private bool stopped, disposed;
     // Accessed only by the serialized storage queue; retry failed cleanup at confirmed close.
     private readonly HashSet<Guid> pendingRetirements = [];
     private bool closeSucceeded = true;
@@ -25,59 +31,75 @@ public sealed class RecoveryService : IDisposable
         this.files = files ?? new Utf8FileService();
     }
 
+    // Single-document caller compatibility: replacing a document retires the old draft.
     public void Track(DocumentSession session)
     {
         if (stopped) return;
-        var old = tracked;
-        tracked = session;
-        if (old?.DocumentId != session.DocumentId)
-        {
-            if (old is not null) Retire(old.DocumentId);
-            firstUnwritten = lastChange = lastAttempt = null;
-            writtenRevision = null;
-        }
+        if (currentDocument is { } old && old != session.DocumentId) _ = RemoveDocumentAsync(old);
+        currentDocument = session.DocumentId;
+        TrackDocument(session);
+    }
+
+    // Workspace callers track every open document, regardless of the selected tab.
+    public void TrackDocument(DocumentSession session)
+    {
+        if (stopped) return;
+        if (!trackedDocuments.TryGetValue(session.DocumentId, out var state))
+            trackedDocuments.Add(session.DocumentId, state = new());
+        var old = state.Session;
+        state.Session = session;
         if (!session.IsModified)
         {
-            if (old?.DocumentId == session.DocumentId && old.IsModified) Retire(session.DocumentId);
-            firstUnwritten = lastChange = null;
-            writtenRevision = null;
+            if (old?.IsModified == true) Retire(session.DocumentId);
+            state.FirstUnwritten = state.LastChange = null;
+            state.WrittenRevision = null;
         }
-        else if (old?.DocumentId != session.DocumentId || old.Revision != session.Revision || !old.IsModified)
+        else if (old is null || old.Revision != session.Revision || !old.IsModified)
         {
             var now = clock.GetUtcNow();
-            firstUnwritten ??= now;
-            lastChange = now;
+            state.FirstUnwritten ??= now;
+            state.LastChange = now;
         }
     }
 
-    public async Task TickAsync(Func<RecoverySnapshot> capture)
+    public Task TickAsync(Func<RecoverySnapshot> capture) => currentDocument is { } id
+        ? TickDocumentAsync(id, capture) : Task.CompletedTask;
+
+    public async Task TickDocumentAsync(Guid id, Func<RecoverySnapshot> capture)
     {
-        if (stopped || writing || tracked is not { IsModified: true } session || writtenRevision == session.Revision) return;
+        if (stopped || !trackedDocuments.TryGetValue(id, out var state) || state.Writing ||
+            !state.Session.IsModified || state.WrittenRevision == state.Session.Revision) return;
         var now = clock.GetUtcNow();
-        if (lastAttempt is { } attempt && now - attempt < TimeSpan.FromSeconds(5)) return;
-        if (now - (lastChange ?? now) < TimeSpan.FromSeconds(5) && now - (firstUnwritten ?? now) < TimeSpan.FromSeconds(30)) return;
+        if (state.LastAttempt is { } attempt && now - attempt < TimeSpan.FromSeconds(5)) return;
+        if (now - (state.LastChange ?? now) < TimeSpan.FromSeconds(5) &&
+            now - (state.FirstUnwritten ?? now) < TimeSpan.FromSeconds(30)) return;
         var snapshot = capture();
-        writing = true;
-        lastAttempt = now;
+        if (snapshot.DocumentId != id) throw new InvalidOperationException("復元対象の文書が一致しません。");
+        state.Writing = true;
+        state.LastAttempt = now;
         try
         {
             var success = await Enqueue(() =>
             {
                 store.Write(snapshot);
-                // New edits supersede an earlier failed cleanup for this document.
                 pendingRetirements.Remove(snapshot.DocumentId);
                 status = $"復元用コピー: {snapshot.CapturedAt.ToLocalTime():HH:mm:ss}";
             });
-            if (success && tracked?.DocumentId == snapshot.DocumentId)
+            if (success && trackedDocuments.TryGetValue(id, out var current) && ReferenceEquals(current, state))
             {
-                writtenRevision = snapshot.Revision;
-                if (tracked.Revision == snapshot.Revision) firstUnwritten = null;
-                else firstUnwritten = clock.GetUtcNow();
+                state.WrittenRevision = snapshot.Revision;
+                state.FirstUnwritten = state.Session.Revision == snapshot.Revision ? null : clock.GetUtcNow();
             }
         }
-        finally { writing = false; }
+        finally { state.Writing = false; }
     }
 
+    public Task<bool> RemoveDocumentAsync(Guid id)
+    {
+        if (stopped) return Task.FromResult(false);
+        trackedDocuments.Remove(id);
+        return Enqueue(() => RetireCore(id));
+    }
     private void Retire(Guid id) => _ = Enqueue(() => RetireCore(id));
 
     private void RetireCore(Guid id)
@@ -118,7 +140,8 @@ public sealed class RecoveryService : IDisposable
     public async Task<RecoverySnapshot> ClaimAsync(RecoveryKey key)
     {
         RecoverySnapshot? snapshot = null;
-        if (!await Enqueue(() => snapshot = store.Claim(key))) throw new IOException(status);
+        var id = trackedDocuments.ContainsKey(key.DocumentId) ? Guid.NewGuid() : key.DocumentId;
+        if (!await Enqueue(() => snapshot = store.Claim(key, id))) throw new IOException(status);
         return snapshot!;
     }
 
@@ -132,9 +155,10 @@ public sealed class RecoveryService : IDisposable
     {
         if (stopped) { await tail; return closeSucceeded; }
         stopped = true;
+        var ids = trackedDocuments.Keys.ToArray();
         await Enqueue(() =>
         {
-            if (tracked is not null) pendingRetirements.Add(tracked.DocumentId);
+            foreach (var id in ids) pendingRetirements.Add(id);
             foreach (var id in pendingRetirements.ToArray())
             {
                 try { RetireCore(id); }
@@ -162,3 +186,4 @@ public sealed class RecoveryService : IDisposable
 
     private static bool IsStorageError(Exception e) => e is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
 }
+

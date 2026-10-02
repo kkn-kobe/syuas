@@ -168,7 +168,7 @@ public sealed class TableEditingUiTests
     public void CommandRequiresDialogProviderAndCannotExecuteAfterDispose() => Sta.Run(() =>
     {
         using var editor = new AvalonEditAdapter(new TextEditor());
-        using var model = new MainViewModel(editor, new Utf8FileService(), new Dialogs(), new History());
+        using var model = new DocumentTabViewModel(editor, new Utf8FileService(), new Dialogs(), new History());
         Assert.False(model.EditTableCommand.CanExecute(null));
         model.EditTableCommand.Execute(null);
         using var f = new Fixture(TableLocatorTests.Table);
@@ -235,7 +235,7 @@ public sealed class TableEditingUiTests
     private sealed class Fixture : IDisposable
     {
         public AvalonEditAdapter Editor { get; } = new(new TextEditor());
-        public MainViewModel Model { get; }
+        public DocumentTabViewModel Model { get; }
         public Dialogs Dialogs { get; } = new();
         public TableDialogs TableDialogs { get; } = new();
         public int FocusRequests { get; private set; }
@@ -270,3 +270,4 @@ public sealed class TableEditingUiTests
         public void Save(IReadOnlyList<string> paths) { }
     }
 }
+

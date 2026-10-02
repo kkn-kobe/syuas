@@ -201,7 +201,7 @@ public sealed class ExternalChangeIntegrationTests
         public Utf8FileService Files { get; } = new();
         public Dialogs Dialogs { get; } = new();
         public ExternalChangeServiceTests.FakeMonitor Monitor { get; } = new();
-        public MainViewModel Model { get; }
+        public DocumentTabViewModel Model { get; }
         public Fixture()
         {
             System.IO.Directory.CreateDirectory(Directory);
@@ -237,3 +237,4 @@ public sealed class ExternalChangeIntegrationTests
         public void Save(IReadOnlyList<string> paths) { }
     }
 }
+

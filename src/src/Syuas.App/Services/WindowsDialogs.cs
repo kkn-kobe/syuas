@@ -30,6 +30,12 @@ public sealed class WindowsDialogs(Window owner) : IUserDialogs
         return dialog.ShowDialog(owner) == true ? dialog.FileName : null;
     }
 
+    public IReadOnlyList<string> ChooseOpenFiles()
+    {
+        var dialog = new OpenFileDialog { Filter = Filter, CheckFileExists = true, Multiselect = true };
+        return dialog.ShowDialog(owner) == true ? dialog.FileNames : [];
+    }
+
     public SaveDecision ConfirmSave(string documentName) => MessageBox.Show(owner,
         $"「{documentName}」への変更を保存しますか？", "SYUAS", MessageBoxButton.YesNoCancel, MessageBoxImage.Question) switch
     {

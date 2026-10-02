@@ -7,6 +7,7 @@ public enum SaveDecision { Save, Discard, Cancel }
 public interface IUserDialogs
 {
     string? ChooseOpenFile();
+    IReadOnlyList<string> ChooseOpenFiles() => ChooseOpenFile() is { } path ? [path] : [];
     string? ChooseSaveFile(string? currentPath);
     SaveDecision ConfirmSave(string documentName);
     SaveConflictDecision ResolveSaveConflict(string path, FileObservation observation, bool isCurrentFile);

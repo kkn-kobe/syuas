@@ -1,0 +1,23 @@
+<UserControl x:Class="Syuas.App.Views.DocumentEditorView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit">
+    <avalon:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="Consolas, Yu Gothic UI" FontSize="15"
+                       Padding="12" Background="White" Foreground="#202B3C" LineNumbersForeground="#8A96A6"
+                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                       AutomationProperties.Name="AsciiDoc ソースエディタ">
+      <avalon:TextEditor.ContextMenu>
+        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+          <MenuItem Command="ApplicationCommands.Undo" />
+          <MenuItem Command="ApplicationCommands.Redo" />
+          <Separator />
+          <MenuItem Command="ApplicationCommands.Cut" />
+          <MenuItem Command="ApplicationCommands.Copy" />
+          <MenuItem Command="ApplicationCommands.Paste" />
+          <MenuItem Command="ApplicationCommands.SelectAll" />
+          <Separator />
+          <MenuItem x:Name="EditTableContextMenu" Header="表を再編集…" Command="{Binding EditTableCommand}" ToolTip="現在のカーソル・選択範囲の表を再編集します。" />
+        </ContextMenu>
+      </avalon:TextEditor.ContextMenu>
+    </avalon:TextEditor>
+</UserControl>

@@ -15,7 +15,15 @@ namespace Syuas.App;
 
 public partial class MainWindow : Window
 {
-    private readonly AvalonEditAdapter adapter;
+    private readonly Dictionary<DocumentTabViewModel, DocumentEditorView> editorViews = [];
+    public static readonly DependencyProperty ActiveEditorProperty = DependencyProperty.Register(
+        nameof(ActiveEditor), typeof(ICSharpCode.AvalonEdit.TextEditor), typeof(MainWindow));
+    public ICSharpCode.AvalonEdit.TextEditor ActiveEditor
+    {
+        get => (ICSharpCode.AvalonEdit.TextEditor)GetValue(ActiveEditorProperty);
+        private set => SetValue(ActiveEditorProperty, value);
+    }
+    public ICSharpCode.AvalonEdit.TextEditor Editor => ActiveEditor;
     private readonly MainViewModel viewModel;
     private readonly DispatcherTimer documentUpdate = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer recoveryUpdate = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -26,22 +34,32 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Editor.SyntaxHighlighting = AsciiDocHighlighting.Load();
-        Editor.Options.IndentationSize = 4;
-        Editor.Options.ConvertTabsToSpaces = false;
-        adapter = new(Editor);
         var files = new Utf8FileService();
-        viewModel = new(adapter, files, new WindowsDialogs(this),
-            new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this), new TableEditingDialogs(this));
-        viewModel.EditorFocusRequested += OnEditorFocusRequested;
-        viewModel.Assistance!.FocusRequested += (_, _) => Editor.Focus();
-        viewModel.Structure.FocusRequested += (_, _) => Editor.Focus();
-        Editor.TextChanged += OnSourceChanged;
+        var dialogs = new WindowsDialogs(this);
+        var recent = new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json"));
+        viewModel = new(() =>
+        {
+            var view = new DocumentEditorView { Visibility = Visibility.Collapsed };
+            var document = new DocumentTabViewModel(view.Adapter, files, dialogs, recent,
+                new InputAssistanceDialogs(this), new TableEditingDialogs(this));
+            view.DataContext = document;
+            editorViews.Add(document, view);
+            EditorHost.Children.Add(view);
+            view.Editor.TextChanged += OnSourceChanged;
+            document.EditorFocusRequested += OnEditorFocusRequested;
+            document.Assistance!.FocusRequested += OnEditorFocusRequested;
+            document.Structure.FocusRequested += OnEditorFocusRequested;
+            document.Disposed += OnDocumentDisposed;
+            document.EnableExternalMonitoring(new ExternalChangeService(new FileSystemChangeMonitor(), files));
+            return document;
+        }, dialogs, recent);
+        viewModel.ActiveDocumentChanged += OnActiveDocumentChanged;
+        OnActiveDocumentChanged(this, EventArgs.Empty);
         viewModel.PropertyChanged += OnViewModelChanged;
         documentUpdate.Tick += OnDocumentUpdate;
         recoveryUpdate.Tick += OnRecoveryTick;
         DataContext = viewModel;
-        viewModel.EnableExternalMonitoring(new ExternalChangeService(new FileSystemChangeMonitor(), files));
+
         externalUpdate.Tick += OnExternalTick;
         Activated += OnActivated;
     }
@@ -82,9 +100,36 @@ public partial class MainWindow : Window
         Activated -= OnActivated;
         recoveryUpdate.Stop(); recoveryUpdate.Tick -= OnRecoveryTick;
         documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
-        Editor.TextChanged -= OnSourceChanged; viewModel.PropertyChanged -= OnViewModelChanged;
-        viewModel.EditorFocusRequested -= OnEditorFocusRequested;
-        HtmlPreview.Dispose(); viewModel.Dispose(); adapter.Dispose();
+        viewModel.PropertyChanged -= OnViewModelChanged;
+        viewModel.ActiveDocumentChanged -= OnActiveDocumentChanged;
+        HtmlPreview.Dispose(); viewModel.Dispose();
+    }
+    private void OnDocumentDisposed(object? sender, EventArgs e)
+    {
+        if (sender is not DocumentTabViewModel document || !editorViews.Remove(document, out var view)) return;
+        view.Editor.TextChanged -= OnSourceChanged;
+        document.EditorFocusRequested -= OnEditorFocusRequested;
+        document.Assistance!.FocusRequested -= OnEditorFocusRequested;
+        document.Structure.FocusRequested -= OnEditorFocusRequested;
+        document.Disposed -= OnDocumentDisposed;
+        EditorHost.Children.Remove(view);
+        view.Dispose();
+    }
+    private void OnActiveDocumentChanged(object? sender, EventArgs e)
+    {
+        foreach (var (document, view) in editorViews)
+            if (document != viewModel.ActiveDocument && view.Visibility == Visibility.Visible) view.HideEditor();
+        var selectedView = editorViews[viewModel.ActiveDocument];
+        selectedView.Visibility = Visibility.Visible;
+        ActiveEditor = selectedView.Editor;
+        HtmlPreview.InvalidateDocument();
+        viewModel.Structure.Refresh();
+        OnSourceChanged(this, EventArgs.Empty);
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!closed && ActiveEditor == selectedView.Editor) selectedView.RestoreViewport();
+        }), DispatcherPriority.Loaded);
+        _ = viewModel.ActiveDocument.CheckExternalChangesAsync(force: true);
     }
     private async void OnRecoveryTick(object? sender, EventArgs e) => await viewModel.TickRecoveryAsync();
     private void OnEditorFocusRequested(object? sender, EventArgs e) => Editor.Focus();
@@ -147,9 +192,15 @@ public partial class MainWindow : Window
         finally { recoveryDialogOpen = false; IsEnabled = true; if (!closed) Editor.Focus(); }
     }
     private static bool IsRecoveryError(Exception e) => e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
-    private void OnSourceChanged(object? sender, EventArgs e) { documentUpdate.Stop(); documentUpdate.Start(); }
+    private void OnSourceChanged(object? sender, EventArgs e)
+    {
+        if (sender is ICSharpCode.AvalonEdit.TextEditor source && source != ActiveEditor) return;
+        documentUpdate.Stop(); documentUpdate.Start();
+    }
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.IsRecoveryBusy))
+            foreach (var view in editorViews.Values) view.Editor.IsReadOnly = viewModel.IsRecoveryBusy;
         if (e.PropertyName is nameof(MainViewModel.FilePath) or nameof(MainViewModel.IsPreviewVisible)) OnSourceChanged(sender, EventArgs.Empty);
     }
     private async void OnDocumentUpdate(object? sender, EventArgs e)
@@ -183,7 +234,12 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.F or Key.H)
+        if (e.Key == Key.Tab && (Keyboard.Modifiers == ModifierKeys.Control || Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
+        {
+            viewModel.SelectRelative(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? -1 : 1);
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.F or Key.H)
         {
             ShowSearch(e.Key == Key.H);
             e.Handled = true;
@@ -206,17 +262,13 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter) { viewModel.FindNext(); e.Handled = true; }
     }
 
-    private static string? DroppedPath(IDataObject data)
-    {
-        if (!data.GetDataPresent(DataFormats.FileDrop)) return null;
-        return data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths
-            && File.Exists(paths[0]) && Extensions.Contains(Path.GetExtension(paths[0])) ? paths[0] : null;
-    }
-
+    private static string[] DroppedPaths(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] paths
+            ? paths.Where(p => File.Exists(p) && Extensions.Contains(Path.GetExtension(p))).ToArray() : [];
     private void OnDragOver(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-        e.Effects = DroppedPath(e.Data) is null ? DragDropEffects.None : DragDropEffects.Copy;
+        e.Effects = DroppedPaths(e.Data).Length == 0 ? DragDropEffects.None : DragDropEffects.Copy;
         e.Handled = true;
     }
 
@@ -224,10 +276,11 @@ public partial class MainWindow : Window
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         e.Handled = true;
-        if (DroppedPath(e.Data) is { } path) viewModel.Open(path);
+        viewModel.OpenMany(DroppedPaths(e.Data));
     }
 
     private void OnAbout(object sender, RoutedEventArgs e) => new Views.AboutDialog { Owner = this }.ShowDialog();
     private void OnRecoveryHelp(object sender, RoutedEventArgs e) => new RecoveryHelpDialog { Owner = this }.ShowDialog();
     private void OnTableEditingHelp(object sender, RoutedEventArgs e) => new TableEditingHelpDialog { Owner = this }.ShowDialog();
 }
+

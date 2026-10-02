@@ -361,7 +361,7 @@ public sealed class EditorTests
         public FakeFiles Files { get; } = new();
         public FakeDialogs Dialogs { get; } = new();
         public FakeHistory History { get; } = new();
-        public MainViewModel Model { get; }
+        public DocumentTabViewModel Model { get; }
         public Fixture() => Model = new(Editor, Files, Dialogs, History);
         public void Dispose() { Model.Dispose(); Editor.Dispose(); }
     }
@@ -411,3 +411,4 @@ public sealed class EditorTests
         }
     }
 }
+

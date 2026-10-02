@@ -20,13 +20,13 @@ window.renderPreview = request => {
     try {
       const html = await convert(request.source, {
         safe: request.saved ? 'server' : 'secure', backend: 'html5', standalone: false,
-        base_dir: 'https://document.syuas.local',
+        base_dir: request.resourceBase,
         attributes: { showtitle: true, 'max-include-depth': 10, 'webfonts!': '', 'source-highlighter!': '' }
       });
       if (request.version !== latestVersion) return;
       frame.srcdoc = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https://document.syuas.local data:; style-src 'unsafe-inline'; base-uri https://document.syuas.local; form-action 'none';">
-<base href="https://document.syuas.local/"><style>${css}</style></head><body>${html}</body></html>`;
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${request.resourceBase} data:; style-src 'unsafe-inline'; base-uri ${request.resourceBase}; form-action 'none';">
+<base href="${request.resourceBase}/"><style>${css}</style></head><body>${html}</body></html>`;
       const messages = logger.getMessages().map(entry => entry.getText()).join('\n');
       send({ type: 'rendered', version: request.version, message: messages });
     } catch (error) {
@@ -49,3 +49,4 @@ frame.addEventListener('load', () => {
   });
 });
 send({ type: 'ready' });
+

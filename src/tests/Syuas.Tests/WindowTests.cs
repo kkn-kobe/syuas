@@ -26,9 +26,9 @@ public sealed class WindowTests
         content.Arrange(new Rect(0, 0, 1120, 700));
         Assert.NotNull(window.DataContext);
         Assert.Contains("SYUAS", window.Title);
-        Assert.NotNull(window.FindName("Editor"));
+        Assert.NotNull(window.ActiveEditor);
         var model = Assert.IsType<MainViewModel>(window.DataContext);
-        var sourceEditor = Assert.IsType<ICSharpCode.AvalonEdit.TextEditor>(window.FindName("Editor"));
+        var sourceEditor = window.ActiveEditor;
         sourceEditor.Text = "== Overview\n\n=== Details\n\n== Configuration";
         sourceEditor.Document.UndoStack.MarkAsOriginalFile();
         model.Structure.Refresh();
@@ -54,7 +54,7 @@ public sealed class WindowTests
             using var stream = File.Create(path);
             encoder.Save(stream);
         }
-        var editorLayout = Assert.IsType<Grid>(sourceEditor.Parent);
+        var editorLayout = Assert.IsType<Grid>(window.FindName("DocumentLayout"));
         editorLayout.ColumnDefinitions[0].Width = new GridLength(250);
         model.Structure.IsVisible = false;
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
@@ -86,6 +86,36 @@ public sealed class WindowTests
         var contextEditTable = Assert.Single(sourceEditor.ContextMenu.Items.OfType<MenuItem>(), item => item.Name == "EditTableContextMenu");
         Assert.Same(model.EditTableCommand, contextEditTable.Command);
         Assert.True(contextEditTable.Command.CanExecute(null));
+        var firstTab = model.ActiveDocument;
+        var tabs = Assert.IsType<TabControl>(window.FindName("DocumentTabs"));
+        model.New();
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        Assert.Equal(2, tabs.Items.Count);
+        Assert.Same(model.ActiveDocument, tabs.SelectedItem);
+        Assert.NotSame(sourceEditor, window.ActiveEditor);
+        tabs.SelectedItem = firstTab;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        Assert.Same(firstTab, model.ActiveDocument);
+        Assert.Same(sourceEditor, window.ActiveEditor);
+        Assert.True(sourceEditor.ActualWidth > 300);
+        if (Environment.GetEnvironmentVariable("SYUAS_TABS_SCREENSHOT") is { Length: > 0 } tabsImage)
+            RenderScreenshot(content, window.Background, 1120, 700, tabsImage);
+        sourceEditor.Text = string.Join("\n", Enumerable.Range(1, 300).Select(i => $"line {i}"));
+        sourceEditor.Document.UndoStack.MarkAsOriginalFile();
+        content.UpdateLayout();
+        sourceEditor.ScrollToVerticalOffset(900);
+        content.UpdateLayout();
+        var verticalOffset = sourceEditor.VerticalOffset;
+        Assert.True(verticalOffset > 0);
+        model.SelectRelative(1);
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        model.ActiveDocument = firstTab;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        Assert.Equal(verticalOffset, sourceEditor.VerticalOffset, precision: 1);
         window.Close();
 
         var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
@@ -416,7 +446,7 @@ public sealed class WindowTests
         {
             var source = "= Preview\n\n== Unsaved edit\n\ninclude::included.adoc[tags=\"shown\",leveloffset=+1,encoding=UTF-8]\n\ninclude::missing.adoc[opts=optional]\n\nimage::pixel.png[Test image]\n\n++++\n<script>window.evil = true</script>\n++++";
             var task = host.Dispatcher.Invoke(() => preview.RenderAsync(source, Path.Combine(directory, "main.adoc")));
-            PumpUntil(host, () => task.IsCompleted && (preview.RenderedVersion > 0 || preview.StatusText.Contains("できません")));
+            PumpUntil(host, () => task.IsCompleted && (preview.RenderedVersion > 0 || preview.StatusText.Contains("できません") || preview.StatusText.Contains("失敗")));
             task.GetAwaiter().GetResult();
             Assert.True(preview.RenderedVersion > 0, preview.StatusText);
             string html = "";
@@ -458,6 +488,26 @@ public sealed class WindowTests
                 PumpUntil(host, () => inspection.IsCompleted);
                 return inspection.Result.Contains("Latest") && !inspection.Result.Contains("Old");
             });
+            var otherDirectory = Path.Combine(directory, "other-tab");
+            Directory.CreateDirectory(otherDirectory);
+            File.WriteAllText(Path.Combine(otherDirectory, "included.adoc"), "Other tab content");
+            File.Copy(Path.Combine(directory, "pixel.png"), Path.Combine(otherDirectory, "pixel.png"), true);
+            host.Dispatcher.Invoke(preview.InvalidateDocument);
+            Assert.Equal(Visibility.Hidden, ((Microsoft.Web.WebView2.Wpf.WebView2)preview.FindName("Browser")).Visibility);
+            var switched = host.Dispatcher.Invoke(() => preview.RenderAsync(
+                "== Other tab\n\ninclude::included.adoc[]\n\nimage::pixel.png[]", Path.Combine(otherDirectory, "main.adoc")));
+            PumpUntil(host, () => switched.IsCompleted && preview.RenderedVersion == 5);
+            PumpUntil(host, () =>
+            {
+                var inspection = host.Dispatcher.Invoke(() => InspectPreview(preview,
+                    "document.getElementById('preview').contentDocument.body.innerHTML"));
+                PumpUntil(host, () => inspection.IsCompleted);
+                return inspection.Result.Contains("Other tab content") && !inspection.Result.Contains("Included content");
+            });
+            var staleResource = host.Dispatcher.Invoke(() => InspectPreview(preview,
+                "(() => { const x = new XMLHttpRequest(); x.open('GET', 'https://1.document.syuas.local/included.adoc', false); try { x.send(); return x.status; } catch { return 0; } })()"));
+            PumpUntil(host, () => staleResource.IsCompleted);
+            Assert.NotEqual("200", staleResource.Result);
         }
         finally { preview.Dispose(); host.Close(); }
     }
@@ -499,3 +549,4 @@ public sealed class WindowTests
         }
     }
 }
+

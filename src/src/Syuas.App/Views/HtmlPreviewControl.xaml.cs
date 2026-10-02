@@ -18,6 +18,14 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
     public long RenderedVersion { get; private set; }
     public HtmlPreviewControl() => InitializeComponent();
 
+    public void InvalidateDocument()
+    {
+        version++;
+        documentPath = null;
+        Browser.Visibility = System.Windows.Visibility.Hidden;
+        Status.Text = "HTMLプレビューを更新しています…";
+    }
+
     public async Task RenderAsync(string source, string? path)
     {
         if (disposed) return;
@@ -29,7 +37,8 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
             initialization ??= InitializeBrowserAsync();
             await initialization;
             if (disposed || requestVersion != version) return;
-            var request = JsonSerializer.Serialize(new { source, version = requestVersion, saved = path is not null });
+            var request = JsonSerializer.Serialize(new { source, version = requestVersion, saved = path is not null,
+                resourceBase = $"https://{requestVersion}.document.syuas.local" });
             await Browser.ExecuteScriptAsync($"window.renderPreview({request});");
         }
         catch (Exception e) when (e is not OutOfMemoryException)
@@ -79,6 +88,7 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
         var details = message.GetProperty("message").GetString();
         if (type == "rendered")
         {
+            Browser.Visibility = System.Windows.Visibility.Visible;
             RenderedVersion = version;
             Status.Text = string.IsNullOrEmpty(details)
                 ? documentPath is null ? "更新済み（未保存文書のincludeは展開しません）" : "更新済み（文書フォルダー内の画像・includeに対応）"
@@ -91,13 +101,18 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
     {
         if (Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host == AppHost) return;
         var deferral = e.GetDeferral();
+        var requestVersion = version;
         try
         {
-            var path = PreviewResourcePolicy.Resolve(e.Request.Uri, documentPath);
+            // Resource URLs carry a render identity so a previous tab cannot read the new tab's files.
+            var resourceUri = Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var requested)
+                && requested.Scheme == "https" && requested.Host == $"{requestVersion}.document.syuas.local"
+                ? new UriBuilder(requested) { Host = "document.syuas.local" }.Uri.AbsoluteUri : "";
+            var path = PreviewResourcePolicy.Resolve(resourceUri, documentPath);
             if (path is not null && File.Exists(path) && new FileInfo(path).Length <= 16 * 1024 * 1024)
             {
                 var bytes = await File.ReadAllBytesAsync(path);
-                if (disposed) return;
+                if (disposed || requestVersion != version) return;
                 var mime = Path.GetExtension(path).ToLowerInvariant() switch
                 {
                     ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".svg" => "image/svg+xml",
@@ -123,3 +138,4 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
 
     public void Dispose() { disposed = true; version++; ready.TrySetCanceled(); Browser.Dispose(); }
 }
+

@@ -63,13 +63,16 @@ public sealed class RecoveryStore : IRecoveryStore
         return candidates.OrderByDescending(c => c.Snapshot?.CapturedAt).ToArray();
     }
 
-    public RecoverySnapshot Claim(RecoveryKey key)
+    public RecoverySnapshot Claim(RecoveryKey key) => Claim(key, key.DocumentId);
+
+    public RecoverySnapshot Claim(RecoveryKey key, Guid documentId)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var source = ForeignFolder(key);
         using var sourceLease = AcquireLease(source);
         var candidate = ReadCandidate(source, key);
-        var snapshot = candidate?.Snapshot ?? throw new IOException("この復元候補は使用中、破棄済み、または破損しています。一覧を更新してください。");
+        var original = candidate?.Snapshot ?? throw new IOException("この復元候補は使用中、破棄済み、または破損しています。一覧を更新してください。");
+        var snapshot = original with { DocumentId = documentId };
         Write(snapshot);
         RetireIn(source, key.SessionId, key.DocumentId);
         return snapshot;

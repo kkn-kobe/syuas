@@ -219,12 +219,12 @@ public sealed class RecoveryIntegrationTests
         public RecoveryServiceTests.ManualClock Clock { get; } = new();
         public Dialogs Dialogs { get; } = new();
         public RecoveryService Service { get; private set; } = null!;
-        public MainViewModel Model { get; }
+        public DocumentTabViewModel Model { get; }
         public Fixture() => Model = CreateModel();
-        public MainViewModel CreateModel()
+        public DocumentTabViewModel CreateModel()
         {
             Editor.Load("");
-            var model = new MainViewModel(Editor, Files, Dialogs, new History());
+            var model = new DocumentTabViewModel(Editor, Files, Dialogs, new History());
             Service = new RecoveryService(new RecoveryStore(RecoveryRoot), Clock);
             model.EnableRecovery(Service);
             return model;
@@ -264,3 +264,4 @@ public sealed class RecoveryIntegrationTests
         public void Save(IReadOnlyList<string> paths) { }
     }
 }
+

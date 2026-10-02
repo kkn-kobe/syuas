@@ -347,7 +347,7 @@ public sealed class TableCompatibilityTests
         public string Root { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SYUAS.Tests", Guid.NewGuid().ToString("N"));
         public string Path => System.IO.Path.Combine(Root, "日本語.adoc");
         public AvalonEditAdapter Editor { get; private set; } = null!;
-        public MainViewModel Model { get; private set; } = null!;
+        public DocumentTabViewModel Model { get; private set; } = null!;
         public RecoveryService Recovery { get; private set; } = null!;
         public RecoveryServiceTests.ManualClock Clock { get; } = new();
         public Dialogs Dialogs { get; } = new();
@@ -405,3 +405,4 @@ public sealed class TableCompatibilityTests
         public void Save(IReadOnlyList<string> paths) { }
     }
 }
+

@@ -314,7 +314,7 @@ public sealed class SaveConflictTests
         public InterceptFiles Files { get; }
         public Dialogs Dialogs { get; } = new();
         public History History { get; } = new();
-        public MainViewModel Model { get; }
+        public DocumentTabViewModel Model { get; }
         public Fixture()
         {
             System.IO.Directory.CreateDirectory(Directory);
@@ -374,3 +374,4 @@ public sealed class SaveConflictTests
         public void Save(IReadOnlyList<string> paths) { Paths = paths; Writes++; }
     }
 }
+

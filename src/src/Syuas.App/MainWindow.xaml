@@ -7,6 +7,7 @@
         AllowDrop="True" PreviewDragOver="OnDragOver" PreviewDrop="OnDrop"
         Closing="OnClosing" Closed="OnClosed" Loaded="OnLoaded" PreviewKeyDown="OnPreviewKeyDown">
   <Window.InputBindings>
+    <KeyBinding Key="W" Modifiers="Control" Command="{Binding CloseDocumentCommand}" />
     <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewCommand}" />
     <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenCommand}" />
     <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
@@ -16,12 +17,20 @@
     <Style TargetType="Button"><Setter Property="Padding" Value="12,5" /><Setter Property="Margin" Value="3" /></Style>
   </Window.Resources>
   <DockPanel>
+    <DockPanel.Style>
+      <Style TargetType="DockPanel">
+        <Style.Triggers><DataTrigger Binding="{Binding IsRecoveryBusy}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger></Style.Triggers>
+      </Style>
+    </DockPanel.Style>
     <Menu DockPanel.Dock="Top" Padding="6,3" Background="White">
       <MenuItem Header="ファイル(_F)">
         <MenuItem Header="新規作成(_N)" Command="{Binding NewCommand}" InputGestureText="Ctrl+N" />
         <MenuItem Header="開く(_O)..." Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
         <MenuItem Header="保存(_S)" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
         <MenuItem Header="名前を付けて保存(_A)..." Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
+        <MenuItem Header="すべて保存" Command="{Binding SaveAllCommand}" />
+        <MenuItem Header="タブを閉じる" Command="{Binding CloseDocumentCommand}" InputGestureText="Ctrl+W" />
+        <Separator />
         <MenuItem Header="復元可能な文書…" Click="OnRecoveryDocuments" />
         <MenuItem Header="外部変更を確認" Click="OnCheckExternal" />
         <MenuItem Header="ディスクから再読み込み" Click="OnReloadExternal" ToolTip="未保存の変更を確認して再読み込みします。Undo履歴はリセットされます。" />
@@ -46,10 +55,10 @@
         <Separator />
         <MenuItem x:Name="EditTableMenu" Header="表を再編集…" Command="{Binding EditTableCommand}" ToolTip="表の中にカーソルを置くか、1つの表の中を選択してください。" />
         <Separator />
-        <MenuItem Header="切り取り(_T)" Command="ApplicationCommands.Cut" CommandTarget="{Binding ElementName=Editor}" />
-        <MenuItem Header="コピー(_C)" Command="ApplicationCommands.Copy" CommandTarget="{Binding ElementName=Editor}" />
-        <MenuItem Header="貼り付け(_P)" Command="ApplicationCommands.Paste" CommandTarget="{Binding ElementName=Editor}" />
-        <MenuItem Header="すべて選択(_A)" Command="ApplicationCommands.SelectAll" CommandTarget="{Binding ElementName=Editor}" />
+        <MenuItem Header="切り取り(_T)" Command="ApplicationCommands.Cut" CommandTarget="{Binding ActiveEditor, RelativeSource={RelativeSource AncestorType=Window}}" />
+        <MenuItem Header="コピー(_C)" Command="ApplicationCommands.Copy" CommandTarget="{Binding ActiveEditor, RelativeSource={RelativeSource AncestorType=Window}}" />
+        <MenuItem Header="貼り付け(_P)" Command="ApplicationCommands.Paste" CommandTarget="{Binding ActiveEditor, RelativeSource={RelativeSource AncestorType=Window}}" />
+        <MenuItem Header="すべて選択(_A)" Command="ApplicationCommands.SelectAll" CommandTarget="{Binding ActiveEditor, RelativeSource={RelativeSource AncestorType=Window}}" />
         <Separator />
         <MenuItem Header="検索(_F)..." Click="OnFind" InputGestureText="Ctrl+F" />
         <MenuItem Header="置換(_H)..." Click="OnReplace" InputGestureText="Ctrl+H" />
@@ -88,8 +97,8 @@
         <MenuItem Header="HTMLプレビュー" IsCheckable="True" IsChecked="{Binding IsPreviewVisible}" />
         <MenuItem Header="プレビューを更新" Click="OnRefreshPreview" />
         <Separator />
-        <MenuItem Header="行番号" IsCheckable="True" IsChecked="{Binding ShowLineNumbers, ElementName=Editor}" />
-        <MenuItem Header="右端で折り返す" IsCheckable="True" IsChecked="{Binding WordWrap, ElementName=Editor}" />
+        <MenuItem Header="行番号" IsCheckable="True" IsChecked="{Binding ActiveEditor.ShowLineNumbers, RelativeSource={RelativeSource AncestorType=Window}}" />
+        <MenuItem Header="右端で折り返す" IsCheckable="True" IsChecked="{Binding ActiveEditor.WordWrap, RelativeSource={RelativeSource AncestorType=Window}}" />
       </MenuItem>
       <MenuItem Header="ヘルプ(_H)">
         <MenuItem Header="表の再編集の使い方" Click="OnTableEditingHelp" />
@@ -123,6 +132,33 @@
         <ToggleButton Content="HTMLプレビュー" IsChecked="{Binding IsPreviewVisible}" Padding="8,4" />
       </ToolBar>
     </ToolBarTray>
+    <TabControl x:Name="DocumentTabs" DockPanel.Dock="Top" ItemsSource="{Binding Documents}"
+                SelectedItem="{Binding ActiveDocument, Mode=TwoWay}"
+                Background="#EEF1F5" BorderThickness="0" Padding="0" AutomationProperties.Name="文書タブ">
+      <TabControl.Style>
+        <Style TargetType="TabControl">
+          <Style.Triggers><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger></Style.Triggers>
+        </Style>
+      </TabControl.Style>
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False">
+            <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="0" />
+          </ScrollViewer>
+        </ControlTemplate>
+      </TabControl.Template>
+      <TabControl.ItemTemplate>
+        <DataTemplate>
+          <StackPanel Orientation="Horizontal" ToolTip="{Binding ToolTip}">
+            <TextBlock Text="{Binding TabTitle}" VerticalAlignment="Center" MaxWidth="230" TextTrimming="CharacterEllipsis" Margin="6,0" />
+            <Button Content="×" Padding="5,0" Margin="3" Focusable="False" ToolTip="閉じる (Ctrl+W)"
+                    AutomationProperties.Name="文書を閉じる"
+                    Command="{Binding DataContext.CloseDocumentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    CommandParameter="{Binding}" />
+          </StackPanel>
+        </DataTemplate>
+      </TabControl.ItemTemplate>
+    </TabControl>
     <StatusBar DockPanel.Dock="Bottom" Background="#E9EEF5" Padding="8,4">
       <StatusBarItem Content="{Binding Position}" MinWidth="130" />
       <Separator />
@@ -168,7 +204,7 @@
         </WrapPanel>
       </StackPanel>
     </Border>
-    <Grid>
+    <Grid x:Name="DocumentLayout">
       <Grid.ColumnDefinitions>
         <ColumnDefinition><ColumnDefinition.Style><Style TargetType="ColumnDefinition"><Setter Property="Width" Value="210" />
           <Style.Triggers><DataTrigger Binding="{Binding Structure.IsVisible}" Value="False"><Setter Property="Width" Value="0" /><Setter Property="MaxWidth" Value="0" /></DataTrigger></Style.Triggers>
@@ -189,26 +225,10 @@
         </TreeView>
       </DockPanel>
       <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" Background="#DDE4ED" Visibility="{Binding Structure.IsVisible, Converter={StaticResource BooleanToVisibility}}" />
-    <avalon:TextEditor Grid.Column="2" x:Name="Editor" IsReadOnly="{Binding IsRecoveryBusy}" ShowLineNumbers="True" FontFamily="Consolas, Yu Gothic UI" FontSize="15"
-                       Padding="12" Background="White" Foreground="#202B3C" LineNumbersForeground="#8A96A6"
-                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                       AutomationProperties.Name="AsciiDoc ソースエディタ">
-      <avalon:TextEditor.ContextMenu>
-        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-          <MenuItem Command="ApplicationCommands.Undo" />
-          <MenuItem Command="ApplicationCommands.Redo" />
-          <Separator />
-          <MenuItem Command="ApplicationCommands.Cut" />
-          <MenuItem Command="ApplicationCommands.Copy" />
-          <MenuItem Command="ApplicationCommands.Paste" />
-          <MenuItem Command="ApplicationCommands.SelectAll" />
-          <Separator />
-          <MenuItem x:Name="EditTableContextMenu" Header="表を再編集…" Command="{Binding EditTableCommand}" ToolTip="現在のカーソル・選択範囲の表を再編集します。" />
-        </ContextMenu>
-      </avalon:TextEditor.ContextMenu>
-    </avalon:TextEditor>
+    <Grid Grid.Column="2" x:Name="EditorHost" />
       <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Center" Background="#DDE4ED" Visibility="{Binding IsPreviewVisible, Converter={StaticResource BooleanToVisibility}}" />
       <views:HtmlPreviewControl x:Name="HtmlPreview" Grid.Column="4" Visibility="{Binding IsPreviewVisible, Converter={StaticResource BooleanToVisibility}}" />
     </Grid>
   </DockPanel>
 </Window>
+
