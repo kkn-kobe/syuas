@@ -92,6 +92,32 @@ public sealed class TableDefinition
     public IReadOnlyList<string> ColumnWidths => columnWidths.AsReadOnly();
     public void SetColumnWidth(int column, string width) => columnWidths[column] = width;
 
+    /// <summary>
+    /// Restores a captured state into this instance. Existing cell references must be rebound
+    /// afterwards. Import validation remains in FromCells; snapshots may contain draft values.
+    /// </summary>
+    public void Restore(TableSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        // Prepare all allocations before replacing the live state. Snapshot construction
+        // already checked coverage/header constraints and exposes no mutable collections.
+        var restoredCells = snapshot.Cells.Select(c => new TableCell(c.Row, c.Column)
+        {
+            RowSpan = c.RowSpan, ColumnSpan = c.ColumnSpan, Text = c.Text
+        }).ToArray();
+        cells.EnsureCapacity(restoredCells.Length);
+        columnWidths.EnsureCapacity(snapshot.ColumnCount);
+        cells.Clear();
+        cells.AddRange(restoredCells);
+        columnWidths.Clear();
+        for (var column = 0; column < snapshot.ColumnCount; column++)
+            columnWidths.Add(snapshot.ColumnWidths[column]);
+        RowCount = snapshot.RowCount;
+        ColumnCount = snapshot.ColumnCount;
+        Title = snapshot.Title;
+        hasHeader = snapshot.HasHeader;
+    }
+
     public TableCell CellAt(int row, int column)
     {
         if (row < 0 || row >= RowCount || column < 0 || column >= ColumnCount) throw new ArgumentOutOfRangeException(nameof(row));
