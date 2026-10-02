@@ -124,6 +124,5 @@ public partial class MainWindow : Window
         if (DroppedPath(e.Data) is { } path) viewModel.Open(path);
     }
 
-    private void OnAbout(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 4 — 文書構造・参照候補・HTMLプレビュー\n.NET 8 / WPF / AvalonEdit / Asciidoctor.js / WebView2", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
+    private void OnAbout(object sender, RoutedEventArgs e) => new Views.AboutDialog { Owner = this }.ShowDialog();
 }
