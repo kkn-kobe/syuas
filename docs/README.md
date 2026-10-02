@@ -1,10 +1,12 @@
 # SYUAS
 
-AsciiDocソースを直接編集するWindowsデスクトップエディタです。AGENTS.mdのPhase 1〜Phase 3を実装しています。
+AsciiDocソースを直接編集するWindowsデスクトップエディタです。AGENTS.mdのPhase 1〜Phase 4を実装しています。
 
 ## 開発・起動
 
 Windows 11、.NET 8 SDK以降（.NET 8をターゲットにビルドできるもの）、.NET 8 Desktop Runtimeが必要です。初回の復元にはNuGetへの接続が必要です。
+
+HTMLプレビューにはMicrosoft Edge WebView2 Runtimeも必要です（Windows 11では通常導入済み）。未導入の場合でもソース編集は使用でき、プレビュー欄にエラーを表示します。導入後はSYUASを再起動してください。Asciidoctor.jsはアプリに同梱しており、Node.jsやRubyのインストールは不要です。
 
 ```powershell
 dotnet restore SYUAS.sln
@@ -49,8 +51,8 @@ UTF-8（BOM有無の両方）を読み込み、BOMなしUTF-8で保存します�
 | --- | --- |
 | 見出し | Level 1〜5を選択（`==`〜`======`）。現在行の文字列を取り込み、既存の見出しレベルも変更可能 |
 | 画像 | ファイル参照、Block / Inline、Alt Text、Title、Width、Height、ID、相対 / 絶対パス |
-| Include | ファイル参照、相対 / 絶対パス。詳細設定でlines・tag・leveloffsetを指定 |
-| Link / xref / Anchor | URLや参照先、表示文字列、IDを入力。参照先の候補表示はPhase 4の対象 |
+| Include | ファイル参照、相対 / 絶対パス。詳細設定でlines・tag・leveloffset・tags・indent・encoding・optionalを指定 |
+| Link / xref / Anchor | URLや参照先、表示文字列、IDを入力。xrefは文書内候補から選択可能。Anchorは重複しないIDを提案 |
 | Source Block | 選択文字列を取り込み、言語を選択または自由入力。C#はcsharp、C++はcppへ変換 |
 | Admonition | NOTE / TIP / IMPORTANT / CAUTION / WARNING。複数行はブロック形式、単一行でもブロック形式を指定可能 |
 | List | 箇条書き・番号付き・チェックリスト。現在行または選択範囲に含まれる行全体へ適用 |
@@ -79,17 +81,47 @@ UTF-8（BOM有無の両方）を読み込み、BOMなしUTF-8で保存します�
 
 このデザイナーは新規表の作成用です。既存のAsciiDoc表をGUIへ逆変換する機能はありません。既存表の修正はソース上で行います。
 
+## Phase 4の機能
+
+### 文書構造と参照候補
+
+左側のDocument Outlineに見出しを階層表示します。クリックするとその行へ移動します。編集後約450msで更新し、「表示 → 文書構造」で表示を切り替えられます。
+
+「挿入 → 相互参照」の候補一覧から見出し・アンカーを選択するとTargetを入力します。表示文字列が空なら見出し名も設定します。Targetの自由入力は引き続き可能です。「アンカー / ID」では選択文章や近くの見出しから新しいIDを提案し、既存IDの重複を検出します。
+
+簡易解析の対象は `=`〜`======` の見出し、`[[id]]`、`[#id]`、`[id="id"]`、見出し末尾の `[[id]]`、一般的な自動IDです。コード・コメント・表などの区切りブロック内は除外します。`idprefix` / `idseparator` / `sectids`にも対応します。include先や条件分岐、属性置換、複雑なインライン書式の完全解析は行わないため、そのような文書では実際の参照先を確認してください。
+
+### 高度なinclude設定
+
+詳細設定で `tags`（例: `intro;usage` / `**;!internal`）、`indent`（0以上）、`encoding`（自由入力可）、`optional`（`opts=optional`）を指定できます。`lines`・`tag`・`tags`はどれか1つだけ指定します。従来の`leveloffset`とも組み合わせられます。
+
+### HTMLプレビュー
+
+「表示 → HTMLプレビュー」またはツールバーで、ソース右側に分割表示します。保存前の編集内容も反映します。変換は同梱Asciidoctor.jsが行い、独自のHTML変換エンジンは使用していません。連続編集中は古い変換結果を破棄し、最新内容を表示します。
+
+保存済み文書では、文書フォルダー内の相対パスによるinclude・画像（`imagesdir`を含む）に対応します。include先の編集など外部ファイルの変更を反映するときは「表示 → プレビューを更新」を押してください。文書内リンクはプレビュー内で移動できます。
+
+プレビューの参照範囲は文書フォルダーとその配下です。親フォルダー・別ドライブ・絶対ファイルパス・シンボリックリンクを経由した参照とリモートURLは読み込みません。未保存文書ではincludeを展開しません。1リソースは16MBまで、includeのネストは10段までです。文書内のスクリプトやフォーム送信、外部リンクへの移動は無効です。HTML/PDFファイルの書き出しは実装していません。
+
 ## 構成
 
 - `src/Syuas.Core`: エディタ非依存のモデル・Generator、ViewModel、ファイル操作、履歴、検索、挿入範囲・改行・カーソル位置の制御。
-- `src/Syuas.App`: WPF View、Windowsダイアログ、入力フォーム、AvalonEdit Adapter、埋め込みXSHD。
+- `src/Syuas.App`: WPF View、Windowsダイアログ、入力フォーム、AvalonEdit Adapter、埋め込みXSHD、WebView2、同梱プレビューエンジン。
 - `tests/Syuas.Tests`: ファイル・検索・文書ライフサイクル、記法生成、入力検証、実際のAvalonEditでの挿入・Undo、WPF画面・ダイアログの読み込みとバインディングのテスト。Windows上で実行します。
 
 表の構造は `TableDefinition` / `TableCell` が管理し、`AsciiDocTableGenerator` はWPFに依存しません。テストでは2×2表、100×50表、ヘッダー、列幅、縦横結合、結合範囲の追加削除、特殊文字、混合操作後のセル範囲整合性を検証します。
 
 AvalonEditへの直接参照はAppに閉じ込めています。各Generatorはモデルから文字列を生成し、`EditorInsertionService` が `IEditorAdapter.BeginUpdate()` と `Replace()` で1回のUndoにまとまる編集を行います。テストはApp経由で実際のAvalonEditも検証します。
 
-Phase 4のOutline / HTML Previewは未実装です。ハイライトは簡易ルールで、AsciiDocの完全な解析や埋め込み言語の構文解析は行いません。
+ハイライト・文書構造抽出は簡易ルールで、AsciiDocの完全な解析や埋め込み言語の構文解析は行いません。
+
+通常のテストに加えて実WebView2の統合確認を実行する場合は、以下を使用します。テストは透明な非アクティブウィンドウで実行し、include・画像・更新順序・スクリプト無効化を検証します。結果のHTMLとPNGを指定フォルダーへ保存します。
+
+```powershell
+$env:SYUAS_WEBVIEW_SMOKE = Join-Path $PWD '.local/webview-fixtures'
+dotnet test SYUAS.sln --filter FullyQualifiedName~WindowTests
+Remove-Item Env:SYUAS_WEBVIEW_SMOKE
+```
 
 ## 手動確認
 
@@ -103,7 +135,11 @@ Phase 4のOutline / HTML Previewは未実装です。ハイライトは簡易ル
 8. 空のリンク表示文字列・空のソースブロックを挿入し、カーソル位置を確認する。入力ダイアログのキャンセルで文書が変わらないことを確認する。
 9. 表デザイナーで4行×4列・ヘッダーありの表を作り、本文の2列×3行を結合する。セル編集・行列追加削除・結合解除・挿入後のUndoを確認する。
 10. `samples/phase3.adoc` で各種セル結合のAsciiDoc出力例を確認する。
+11. `samples/phase4.adoc` を開き、アウトラインから移動、xref候補の選択、重複しないAnchor候補を確認する。
+12. HTMLプレビューを開いてソースを編集し、include先とSVG画像が表示されることを確認する。外部ファイルを変更した場合は「プレビューを更新」を押す。
 
 ## 依存ライブラリ
 
 エディタは [AvalonEdit 6.3.1.120](https://www.nuget.org/packages/AvalonEdit/6.3.1.120)（MIT License）を使用しています。
+
+プレビューは [Microsoft.Web.WebView2 1.0.4191.47](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4191.47) と [Asciidoctor.js 4.1.0](https://www.npmjs.com/package/@asciidoctor/core/v/4.1.0) を使用します。同梱エンジンの出典・ハッシュ・ライセンスは `src/Syuas.App/PreviewAssets/THIRD-PARTY.md` を参照してください。

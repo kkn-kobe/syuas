@@ -8,10 +8,13 @@ public sealed class InputFormViewModel : ObservableObject
     private readonly AssistanceKind kind;
     private readonly InsertionContext context;
     private readonly List<InputField> fields = [];
+    private readonly DocumentStructure structure;
+    private ReferenceCandidate? selectedReference;
     public InputFormViewModel(AssistanceKind kind, InsertionContext context, Action<InputField>? browse = null)
     {
         this.kind = kind;
         this.context = context;
+        structure = DocumentStructureParser.Parse(context.DocumentText);
         Title = kind switch
         {
             AssistanceKind.Heading => "見出し", AssistanceKind.Image => "画像", AssistanceKind.Include => "外部ファイル参照",
@@ -46,6 +49,10 @@ public sealed class InputFormViewModel : ObservableObject
                     Add(new("Lines", "lines（例: 1..5;8..10）", advanced: true));
                     Add(new("Tag", "tag（linesと併用不可）", advanced: true));
                     Add(new("Offset", "leveloffset（例: +1）", advanced: true));
+                    Add(new("Tags", "tags（例: intro;usage / **;!internal）", advanced: true));
+                    Add(new("Indent", "indent（0以上の整数）", advanced: true));
+                    Add(new("Encoding", "encoding（文字コード）", choices: ["", "UTF-8", "UTF-16", "Shift_JIS", "Windows-31J"], editableChoice: true, advanced: true));
+                    Add(new("Optional", "ファイルがなくてもエラーにしない（optional）", "いいえ", choices: ["いいえ", "はい"], advanced: true));
                 }
                 break;
             case AssistanceKind.Link:
@@ -54,7 +61,13 @@ public sealed class InputFormViewModel : ObservableObject
                 Add(new("Text", "表示文字列", context.Text));
                 break;
             case AssistanceKind.Anchor:
-                Add(new("Id", "ID", context.Text));
+                var bases = new[] { context.Text }.Concat(structure.Headings.OrderBy(h => Math.Abs(h.Offset - context.Start)).Select(h => h.Title))
+                    .Where(t => !string.IsNullOrWhiteSpace(t)).DefaultIfEmpty("section");
+                var suggestions = bases.Select(t => DocumentStructureParser.CreateId(t, "", "-"))
+                    .Select(id => char.IsDigit(id[0]) ? "section-" + id : id)
+                    .Select(id => DocumentStructureParser.UniqueId(id, structure.References.Select(r => r.Target), "-"))
+                    .Distinct().Take(30).ToArray();
+                Add(new("Id", "ID（候補から選択または自由入力）", suggestions[0], choices: suggestions, editableChoice: true));
                 break;
             case AssistanceKind.SourceBlock:
                 Add(new("Language", "プログラミング言語（自由入力可）", "C#", choices: ["C#", "C", "C++", "Java", "JavaScript", "TypeScript", "Python", "XML", "JSON", "YAML", "SQL", "Bash", "PowerShell"], editableChoice: true));
@@ -75,6 +88,19 @@ public sealed class InputFormViewModel : ObservableObject
     }
 
     public event EventHandler? CloseRequested;
+    public IReadOnlyList<ReferenceCandidate> ReferenceCandidates => structure.References;
+    public bool ShowReferences => kind == AssistanceKind.CrossReference;
+    public ReferenceCandidate? SelectedReference
+    {
+        get => selectedReference;
+        set
+        {
+            selectedReference = value; Changed();
+            if (value is null) return;
+            this["Target"].Value = value.Target;
+            if (Value("Text").Length == 0) this["Text"].Value = value.Title;
+        }
+    }
     public string Title { get; }
     public IReadOnlyList<InputField> Fields => fields;
     public IEnumerable<InputField> BasicFields => fields.Where(f => !f.Advanced);
@@ -110,7 +136,7 @@ public sealed class InputFormViewModel : ObservableObject
                 text = AsciiDocHeadingGenerator.Generate(new(level, Value("Title")));
                 return new(text, text.Length, true);
             case AssistanceKind.Include:
-                text = AsciiDocIncludeGenerator.Generate(new(Value("File"), context.DocumentPath, Value("PathMode") == "相対パス", Value("Lines"), Value("Tag"), Value("Offset")));
+                text = AsciiDocIncludeGenerator.Generate(new(Value("File"), context.DocumentPath, Value("PathMode") == "相対パス", Value("Lines"), Value("Tag"), Value("Offset"), Value("Tags"), Value("Indent"), Value("Encoding"), Value("Optional") == "はい"));
                 return new(text, text.Length, true);
             case AssistanceKind.Image:
                 var inline = Value("Mode") == "Inline";
@@ -121,6 +147,7 @@ public sealed class InputFormViewModel : ObservableObject
                 text = AsciiDocLinkGenerator.Generate(new(Value("Target"), Value("Text")), kind == AssistanceKind.CrossReference);
                 return new(text, Value("Text").Length == 0 ? text.IndexOf('[') + 1 : text.Length);
             case AssistanceKind.Anchor:
+                if (structure.References.Any(r => r.Target == Value("Id"))) throw new ArgumentException("このIDは文書内で使用されています。別のIDを指定してください。");
                 text = AsciiDocLinkGenerator.GenerateAnchor(Value("Id"));
                 return new(text, text.Length);
             case AssistanceKind.SourceBlock:

@@ -157,6 +157,6 @@ public sealed class GeneratorTests
         include["File"].BrowseCommand!.Execute(null);
         Assert.True(include.InsertCommand.CanExecute(null));
         Assert.Contains("絶対パス", include.Note);
-        Assert.Equal(3, include.AdvancedFields.Count());
+        Assert.Equal(7, include.AdvancedFields.Count());
     }
 }

@@ -20,6 +20,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string searchStatus = "";
     private bool matchCase;
     private bool isSearchVisible;
+    private bool isPreviewVisible;
 
     public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
     {
@@ -27,6 +28,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         this.files = files;
         this.dialogs = dialogs;
         this.recentStore = recentStore;
+        Structure = new(editor);
         if (inputDialogs is not null) Assistance = new(editor, () => FilePath, inputDialogs);
         NewCommand = new(_ => New());
         OpenCommand = new(_ => { var path = dialogs.ChooseOpenFile(); if (path is not null) Open(path); });
@@ -45,6 +47,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public InputAssistanceViewModel? Assistance { get; }
+    public DocumentStructureViewModel Structure { get; }
     public ObservableCollection<string> RecentFiles { get; } = [];
     public RelayCommand NewCommand { get; }
     public RelayCommand OpenCommand { get; }
@@ -65,6 +68,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string ReplacementText { get => replacementText; set { replacementText = value; Changed(); } }
     public bool MatchCase { get => matchCase; set { matchCase = value; SearchStatus = ""; Changed(); } }
     public bool IsSearchVisible { get => isSearchVisible; set { isSearchVisible = value; Changed(); } }
+    public bool IsPreviewVisible { get => isPreviewVisible; set { isPreviewVisible = value; Changed(); } }
     public string SearchStatus { get => searchStatus; private set { searchStatus = value; Changed(); } }
 
     public bool CanClose() => ConfirmDiscard();

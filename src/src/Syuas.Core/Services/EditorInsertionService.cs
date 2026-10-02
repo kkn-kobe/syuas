@@ -21,7 +21,7 @@ public sealed class EditorInsertionService(IEditorAdapter editor)
         }
         var firstLf = text.IndexOf('\n');
         var newLine = firstLf < 0 ? Environment.NewLine : firstLf > 0 && text[firstLf - 1] == '\r' ? "\r\n" : "\n";
-        return new(start, end - start, text[start..end], newLine, documentPath);
+        return new(start, end - start, text[start..end], newLine, documentPath, text);
     }
 
     public void Apply(InsertionContext context, InsertionSnippet snippet)

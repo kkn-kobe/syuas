@@ -17,6 +17,7 @@ public sealed class WindowTests
     {
         var app = new Syuas.App.App();
         app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var window = new MainWindow();
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         var content = (FrameworkElement)window.Content;
@@ -26,11 +27,20 @@ public sealed class WindowTests
         Assert.Contains("SYUAS", window.Title);
         Assert.NotNull(window.FindName("Editor"));
         var model = Assert.IsType<MainViewModel>(window.DataContext);
+        var sourceEditor = Assert.IsType<ICSharpCode.AvalonEdit.TextEditor>(window.FindName("Editor"));
+        sourceEditor.Text = "== Overview\n\n=== Details\n\n== Configuration";
+        sourceEditor.Document.UndoStack.MarkAsOriginalFile();
+        model.Structure.Refresh();
         model.IsSearchVisible = true;
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         content.Measure(new Size(1120, 700));
         content.Arrange(new Rect(0, 0, 1120, 700));
         content.UpdateLayout();
+        var outline = Assert.IsType<TreeView>(window.FindName("OutlineTree"));
+        Assert.Equal(2, outline.Items.Count);
+        var secondHeading = Assert.IsType<TreeViewItem>(outline.ItemContainerGenerator.ContainerFromIndex(1));
+        secondHeading.IsSelected = true;
+        Assert.Equal(sourceEditor.Text.IndexOf("== Configuration", StringComparison.Ordinal), sourceEditor.CaretOffset);
         var searchBox = (FrameworkElement)window.FindName("SearchBox");
         Assert.Equal(Visibility.Visible, ((FrameworkElement)searchBox.Parent).Visibility);
         Assert.True(searchBox.ActualWidth > 0);
@@ -43,6 +53,13 @@ public sealed class WindowTests
             using var stream = File.Create(path);
             encoder.Save(stream);
         }
+        var editorLayout = Assert.IsType<Grid>(sourceEditor.Parent);
+        editorLayout.ColumnDefinitions[0].Width = new GridLength(250);
+        model.Structure.IsVisible = false;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        Assert.Equal(0, editorLayout.ColumnDefinitions[0].ActualWidth);
+        model.Structure.IsVisible = true;
         window.Close();
 
         // Instantiate and lay out every form without showing OS dialogs.
@@ -57,7 +74,7 @@ public sealed class WindowTests
             dialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
             Assert.Equal(form.Title, dialog.Title);
             Assert.NotEmpty(Descendants<TextBox>(panel));
-            foreach (var combo in Descendants<ComboBox>(panel).Where(c => c.Visibility == Visibility.Visible))
+            foreach (var combo in Descendants<ComboBox>(panel).Where(c => c.Visibility == Visibility.Visible && c.DataContext is InputField))
             {
                 var field = Assert.IsType<InputField>(combo.DataContext);
                 Assert.Equal(field.Value, combo.Text);
@@ -136,7 +153,83 @@ public sealed class WindowTests
         Assert.False(tableModel.HasHeader);
         Assert.False(headerCheckBox.IsChecked);
         tableDialog.Close();
+        if (Environment.GetEnvironmentVariable("SYUAS_WEBVIEW_SMOKE") is { Length: > 0 } smokeFolder) VerifyWebPreview(smokeFolder);
     });
+
+    private static void VerifyWebPreview(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "included.adoc"), "// tag::shown[]\n== Included\n\nIncluded content\n// end::shown[]\n// tag::hidden[]\nHidden content\n// end::hidden[]");
+        var imageEncoder = new PngBitmapEncoder();
+        imageEncoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
+            new byte[] { 220, 130, 50, 255, 220, 130, 50, 255, 220, 130, 50, 255, 220, 130, 50, 255 }, 8)));
+        using (var imageStream = File.Create(Path.Combine(directory, "pixel.png"))) imageEncoder.Save(imageStream);
+        var preview = new HtmlPreviewControl();
+        var host = new Window { Content = preview, Width = 700, Height = 550, ShowInTaskbar = false, ShowActivated = false, Opacity = 0 };
+        host.Show();
+        try
+        {
+            var source = "= Preview\n\n== Unsaved edit\n\ninclude::included.adoc[tags=\"shown\",leveloffset=+1,encoding=UTF-8]\n\ninclude::missing.adoc[opts=optional]\n\nimage::pixel.png[Test image]\n\n++++\n<script>window.evil = true</script>\n++++";
+            var task = host.Dispatcher.Invoke(() => preview.RenderAsync(source, Path.Combine(directory, "main.adoc")));
+            PumpUntil(host, () => task.IsCompleted && (preview.RenderedVersion > 0 || preview.StatusText.Contains("できません")));
+            task.GetAwaiter().GetResult();
+            Assert.True(preview.RenderedVersion > 0, preview.StatusText);
+            string html = "";
+            PumpUntil(host, () =>
+            {
+                var inspection = host.Dispatcher.Invoke(() => InspectPreview(preview, "document.getElementById('preview').contentDocument.body.innerHTML"));
+                PumpUntil(host, () => inspection.IsCompleted);
+                html = System.Text.Json.JsonSerializer.Deserialize<string>(inspection.GetAwaiter().GetResult()) ?? "";
+                return html.Contains("Unsaved edit");
+            });
+            Assert.Contains("Included content", html);
+            Assert.DoesNotContain("Hidden content", html);
+            Assert.Contains("pixel.png", html);
+            PumpUntil(host, () =>
+            {
+                var loaded = host.Dispatcher.Invoke(() => InspectPreview(preview, "Array.from(document.getElementById('preview').contentDocument.images).every(i=>i.complete)"));
+                PumpUntil(host, () => loaded.IsCompleted);
+                return loaded.Result == "true";
+            });
+            var state = host.Dispatcher.Invoke(() => InspectPreview(preview, "JSON.stringify({evil:!!document.getElementById('preview').contentWindow.evil,images:Array.from(document.getElementById('preview').contentDocument.images).map(i=>({src:i.src,width:i.naturalWidth}))})"));
+            PumpUntil(host, () => state.IsCompleted);
+            using var stateJson = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Deserialize<string>(state.Result)!);
+            Assert.False(stateJson.RootElement.GetProperty("evil").GetBoolean());
+            Assert.True(stateJson.RootElement.GetProperty("images")[0].GetProperty("width").GetInt32() > 0, state.Result);
+            File.WriteAllText(Path.Combine(directory, "rendered.html"), html);
+            using (var stream = File.Create(Path.Combine(directory, "preview.png")))
+            {
+                var browser = (Microsoft.Web.WebView2.Wpf.WebView2)preview.FindName("Browser");
+                var capture = host.Dispatcher.Invoke(() => browser.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, stream));
+                PumpUntil(host, () => capture.IsCompleted);
+                capture.GetAwaiter().GetResult();
+            }
+            var old = host.Dispatcher.Invoke(() => preview.RenderAsync("== Old", null));
+            var latest = host.Dispatcher.Invoke(() => preview.RenderAsync("== Latest", null));
+            PumpUntil(host, () => old.IsCompleted && latest.IsCompleted && preview.RenderedVersion == 3);
+            PumpUntil(host, () =>
+            {
+                var inspection = host.Dispatcher.Invoke(() => InspectPreview(preview, "document.getElementById('preview').contentDocument.body.innerHTML"));
+                PumpUntil(host, () => inspection.IsCompleted);
+                return inspection.Result.Contains("Latest") && !inspection.Result.Contains("Old");
+            });
+        }
+        finally { preview.Dispose(); host.Close(); }
+    }
+
+    private static Task<string> InspectPreview(HtmlPreviewControl preview, string script)
+        => ((Microsoft.Web.WebView2.Wpf.WebView2)preview.FindName("Browser")).ExecuteScriptAsync(script);
+
+    private static void PumpUntil(Window window, Func<bool> done)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        while (!done())
+        {
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(15), "WebView2 integration check timed out.");
+            window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Thread.Sleep(10);
+        }
+    }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {

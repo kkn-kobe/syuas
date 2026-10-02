@@ -1,0 +1,7 @@
+<UserControl x:Class="Syuas.App.Views.HtmlPreviewControl" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf">
+  <DockPanel Background="White">
+    <TextBlock x:Name="Status" DockPanel.Dock="Top" Text="HTMLプレビュー" TextWrapping="Wrap" Padding="8" Background="#EDF2F8" Foreground="#536579" />
+    <wv:WebView2 x:Name="Browser" />
+  </DockPanel>
+</UserControl>

@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
+using Syuas.Core.Models;
 using Syuas.App.Adapters;
 using Syuas.App.Highlighting;
 using Syuas.App.Services;
@@ -14,6 +16,7 @@ public partial class MainWindow : Window
 {
     private readonly AvalonEditAdapter adapter;
     private readonly MainViewModel viewModel;
+    private readonly DispatcherTimer documentUpdate = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase) { ".adoc", ".asciidoc", ".ad", ".asc", ".txt" };
 
     public MainWindow()
@@ -26,12 +29,41 @@ public partial class MainWindow : Window
         viewModel = new(adapter, new Utf8FileService(), new WindowsDialogs(this),
             new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this));
         viewModel.Assistance!.FocusRequested += (_, _) => Editor.Focus();
+        viewModel.Structure.FocusRequested += (_, _) => Editor.Focus();
+        Editor.TextChanged += OnSourceChanged;
+        viewModel.PropertyChanged += OnViewModelChanged;
+        documentUpdate.Tick += OnDocumentUpdate;
         DataContext = viewModel;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e) => Editor.Focus();
     private void OnClosing(object? sender, CancelEventArgs e) => e.Cancel = !viewModel.CanClose();
-    private void OnClosed(object? sender, EventArgs e) { viewModel.Dispose(); adapter.Dispose(); }
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
+        Editor.TextChanged -= OnSourceChanged; viewModel.PropertyChanged -= OnViewModelChanged;
+        HtmlPreview.Dispose(); viewModel.Dispose(); adapter.Dispose();
+    }
+    private void OnSourceChanged(object? sender, EventArgs e) { documentUpdate.Stop(); documentUpdate.Start(); }
+    private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MainViewModel.FilePath) or nameof(MainViewModel.IsPreviewVisible)) OnSourceChanged(sender, EventArgs.Empty);
+    }
+    private async void OnDocumentUpdate(object? sender, EventArgs e)
+    {
+        documentUpdate.Stop();
+        viewModel.Structure.Refresh();
+        if (viewModel.IsPreviewVisible) await HtmlPreview.RenderAsync(Editor.Text, viewModel.FilePath);
+    }
+    private void OnRefreshPreview(object sender, RoutedEventArgs e)
+    {
+        viewModel.IsPreviewVisible = true;
+        OnDocumentUpdate(sender, EventArgs.Empty);
+    }
+    private void OnOutlineSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is OutlineEntry entry) viewModel.Structure.NavigateCommand.Execute(entry);
+    }
     private void OnExit(object sender, RoutedEventArgs e) => Close();
     private void OnFind(object sender, RoutedEventArgs e) => ShowSearch(false);
     private void OnReplace(object sender, RoutedEventArgs e) => ShowSearch(true);
@@ -93,5 +125,5 @@ public partial class MainWindow : Window
     }
 
     private void OnAbout(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 3 — 表デザイナー\n.NET 8 / WPF / AvalonEdit", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
+        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 4 — 文書構造・参照候補・HTMLプレビュー\n.NET 8 / WPF / AvalonEdit / Asciidoctor.js / WebView2", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
 }

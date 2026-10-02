@@ -9,6 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="../Syuas.Core/Syuas.Core.csproj" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="Highlighting/AsciiDoc.xshd" />
+    <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

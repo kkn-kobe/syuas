@@ -43,6 +43,11 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,0,10,0">
         <TextBlock Text="{Binding Note}" TextWrapping="Wrap" Foreground="#536579" Margin="0,0,0,16" />
+        <StackPanel Visibility="{Binding ShowReferences, Converter={StaticResource Visible}}" Margin="0,0,0,12">
+          <TextBlock Text="現在の文書の見出し・アンカー（簡易解析）" Margin="0,0,0,4" />
+          <ComboBox ItemsSource="{Binding ReferenceCandidates}" DisplayMemberPath="DisplayName" SelectedItem="{Binding SelectedReference}" Padding="6,4"
+                    AutomationProperties.Name="文書内の参照先候補" />
+        </StackPanel>
         <ItemsControl ItemsSource="{Binding BasicFields}" ItemTemplate="{StaticResource FieldTemplate}" />
         <Expander Header="詳細設定" Visibility="{Binding HasAdvanced, Converter={StaticResource Visible}}" Margin="0,0,0,10">
           <ItemsControl ItemsSource="{Binding AdvancedFields}" ItemTemplate="{StaticResource FieldTemplate}" Margin="8" />
