@@ -4,7 +4,7 @@ public enum AssistanceKind
 {
     Heading, Image, Include, Link, CrossReference, Anchor, SourceBlock, Admonition,
     UnorderedList, OrderedList, Checklist, Bold, Italic, Monospace,
-    ListingBlock, LiteralBlock, QuoteBlock, ExampleBlock
+    ListingBlock, LiteralBlock, QuoteBlock, ExampleBlock, Table
 }
 
 public enum InlineFormat { Bold, Italic, Monospace }

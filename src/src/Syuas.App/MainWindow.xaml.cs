@@ -93,5 +93,5 @@ public partial class MainWindow : Window
     }
 
     private void OnAbout(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 2 — 基本入力補助\n.NET 8 / WPF / AvalonEdit", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
+        "SYUAS\nAsciiDoc ソースエディタ\n\nPhase 3 — 表デザイナー\n.NET 8 / WPF / AvalonEdit", "SYUASについて", MessageBoxButton.OK, MessageBoxImage.Information);
 }

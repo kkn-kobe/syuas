@@ -83,6 +83,59 @@ public sealed class WindowTests
             }
             dialog.Close();
         }
+
+        var tableModel = new TableDesignerViewModel();
+        var tableDialog = new TableDesignerDialog(tableModel);
+        var tablePanel = (FrameworkElement)tableDialog.Content;
+        tablePanel.Measure(new Size(1010, 700));
+        tablePanel.Arrange(new Rect(0, 0, 1010, 700));
+        tableDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var cellGrid = Assert.IsType<Grid>(tableDialog.FindName("CellGrid"));
+        Assert.Equal(9, cellGrid.Children.OfType<Border>().Count());
+        var firstCell = Descendants<TextBox>(cellGrid).First();
+        firstCell.Text = "セル入力";
+        Assert.Equal("セル入力", tableModel.Definition.CellAt(0, 0).Text);
+        Assert.Contains("|セル入力", tableModel.Preview);
+        tableModel.RowsInput = "4";
+        tableModel.ResizeCommand.Execute(null);
+        tableModel.Title = "システム構成";
+        tableModel.HasHeader = true;
+        tableModel.Cells[0].Text = "項目"; tableModel.Cells[1].Text = "説明"; tableModel.Cells[2].Text = "備考";
+        tableModel.SelectCell(1, 1); tableModel.SelectCell(2, 2, true);
+        tableModel.MergeCommand.Execute(null);
+        var mergedBorder = Assert.Single(cellGrid.Children.OfType<Border>(), b => Grid.GetRowSpan(b) == 2);
+        Assert.Equal(2, Grid.GetColumnSpan(mergedBorder));
+        var mergedModel = Assert.IsType<TableCellViewModel>(mergedBorder.DataContext);
+        mergedModel.Text = "結合セル\n2行 × 2列";
+        tableModel.Cells.First(c => c.Row == 1 && c.Column == 0).Text = "エディタ";
+        tableModel.Cells.First(c => c.Row == 2 && c.Column == 0).Text = "入力補助";
+        tableModel.Cells.First(c => c.Row == 3 && c.Column == 0).Text = "保存";
+        tablePanel.Measure(new Size(1010, 700));
+        tablePanel.Arrange(new Rect(0, 0, 1010, 700));
+        tableDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        tablePanel.UpdateLayout();
+        Assert.Contains("2.2+|結合セル", tableModel.Preview);
+        Assert.True(tableModel.InsertCommand.CanExecute(null));
+        if (Environment.GetEnvironmentVariable("SYUAS_TABLE_SCREENSHOT") is { Length: > 0 } tablePath)
+        {
+            var bitmap = new RenderTargetBitmap(1010, 700, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(tablePanel);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = File.Create(tablePath);
+            encoder.Save(stream);
+        }
+        tableModel.UnmergeCommand.Execute(null);
+        Assert.Equal(12, cellGrid.Children.OfType<Border>().Count());
+        Assert.All(cellGrid.Children.OfType<Border>(), b => Assert.Equal(1, Grid.GetRowSpan(b)));
+        tableModel.HasHeader = false;
+        tableModel.SelectCell(0, 0); tableModel.SelectCell(1, 0, true); tableModel.MergeCommand.Execute(null);
+        var headerCheckBox = Assert.Single(Descendants<CheckBox>(tablePanel));
+        headerCheckBox.IsChecked = true;
+        tableDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Assert.False(tableModel.HasHeader);
+        Assert.False(headerCheckBox.IsChecked);
+        tableDialog.Close();
     });
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

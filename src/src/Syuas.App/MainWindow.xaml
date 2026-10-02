@@ -50,6 +50,7 @@
       </MenuItem>
       <MenuItem Header="挿入(_I)">
         <MenuItem Header="見出し…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Heading" />
+        <MenuItem Header="表…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Table" />
         <MenuItem Header="画像…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Image" />
         <MenuItem Header="外部ファイル参照 (include)…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Include" />
         <MenuItem Header="リンク…" Command="{Binding Assistance.InsertCommand}" CommandParameter="Link" />
@@ -93,6 +94,7 @@
         <Button Content="検索 / 置換" Click="OnFind" />
         <Separator />
         <Button Content="見出し" Command="{Binding Assistance.InsertCommand}" CommandParameter="Heading" />
+        <Button Content="表" Command="{Binding Assistance.InsertCommand}" CommandParameter="Table" />
         <Button Content="画像" Command="{Binding Assistance.InsertCommand}" CommandParameter="Image" />
         <Button Content="Include" Command="{Binding Assistance.InsertCommand}" CommandParameter="Include" />
         <Button Content="リンク" Command="{Binding Assistance.InsertCommand}" CommandParameter="Link" />

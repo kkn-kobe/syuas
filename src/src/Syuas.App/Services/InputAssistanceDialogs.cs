@@ -11,6 +11,12 @@ public sealed class InputAssistanceDialogs(Window owner) : IInputAssistanceDialo
 {
     public InsertionSnippet? Show(AssistanceKind kind, InsertionContext context)
     {
+        if (kind == AssistanceKind.Table)
+        {
+            var tableModel = new TableDesignerViewModel(context.NewLine);
+            var tableDialog = new TableDesignerDialog(tableModel) { Owner = owner };
+            return tableDialog.ShowDialog() == true ? tableModel.Snippet : null;
+        }
         InputDialog? dialog = null;
         var model = new InputFormViewModel(kind, context, field =>
         {
