@@ -45,6 +45,18 @@ public sealed class DocumentSessionController : IDisposable
 
     public FileObservation Observe(string path) => files.Observe(path);
 
+    public void Restore(RecoverySnapshot snapshot)
+    {
+        changingDocument = true;
+        try
+        {
+            editor.LoadRecovery(snapshot.Text, snapshot.SelectionStart, snapshot.SelectionLength, snapshot.CaretOffset);
+            // Preserve the original baseline; adopting today's disk version would bypass conflict checks.
+            SetSession(new(snapshot.DocumentId, editor.ContentRevision, null, snapshot.Baseline, editor.IsModified));
+        }
+        finally { changingDocument = false; }
+    }
+
     public FileSaveResult Save(string path, FileBaseline? expected, bool preserveBackup = false)
     {
         // Synchronous for now: no user edits can interleave with saving on the UI thread.

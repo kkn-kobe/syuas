@@ -12,9 +12,11 @@ public interface IEditorAdapter
     bool CanRedo { get; }
     int SelectionStart { get; }
     int SelectionLength { get; }
+    int CaretOffset { get; }
     int Line { get; }
     int Column { get; }
     void Load(string text);
+    void LoadRecovery(string text, int selectionStart, int selectionLength, int caretOffset);
     void MarkSaved();
     void Select(int start, int length);
     void Replace(int start, int length, string text);

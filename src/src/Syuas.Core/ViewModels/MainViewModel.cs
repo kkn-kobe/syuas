@@ -20,6 +20,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool matchCase;
     private bool isSearchVisible;
     private bool isPreviewVisible;
+    private RecoveryService? recovery;
+    private bool isRecoveryBusy;
+    private string recoveryStatus = "";
 
     public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
     {
@@ -71,12 +74,72 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsSearchVisible { get => isSearchVisible; set { isSearchVisible = value; Changed(); } }
     public bool IsPreviewVisible { get => isPreviewVisible; set { isPreviewVisible = value; Changed(); } }
     public string SearchStatus { get => searchStatus; private set { searchStatus = value; Changed(); } }
+    public bool IsRecoveryBusy { get => isRecoveryBusy; private set { isRecoveryBusy = value; Changed(); } }
+    public string RecoveryStatus { get => recoveryStatus; private set { recoveryStatus = value; Changed(); } }
+    public bool HasRecovery => recovery is not null;
 
-    public bool CanClose() => ConfirmDiscard();
+    public void EnableRecovery(RecoveryService service)
+    {
+        if (recovery is not null) throw new InvalidOperationException("自動復元は初期化済みです。");
+        recovery = service;
+        recovery.Track(Session);
+        RecoveryStatus = recovery.Status;
+    }
+
+    public void ReportRecoveryError(string message) => RecoveryStatus = $"自動復元: {message}";
+
+    public async Task TickRecoveryAsync()
+    {
+        if (recovery is null || IsRecoveryBusy) return;
+        await recovery.TickAsync(() => new(Session.DocumentId, Session.Revision, DateTimeOffset.UtcNow,
+            editor.Text, Session.Baseline, editor.SelectionStart, editor.SelectionLength, editor.CaretOffset));
+        RecoveryStatus = recovery.Status;
+    }
+
+    public Task<IReadOnlyList<RecoveryCandidate>> ListRecoveryAsync() => recovery?.ListAsync()
+        ?? Task.FromResult<IReadOnlyList<RecoveryCandidate>>([]);
+
+    public async Task<bool> RestoreRecoveryAsync(RecoveryKey key)
+    {
+        if (recovery is null || IsRecoveryBusy || !ConfirmDiscard()) return false;
+        IsRecoveryBusy = true;
+        try
+        {
+            var snapshot = await recovery.ClaimAsync(key);
+            documents.Restore(snapshot);
+            DocumentChanged();
+            RecoveryStatus = "復元しました。元ファイルへ保存するまで復元用コピーを保持します。";
+            return true;
+        }
+        catch (Exception e) when (IsStorageError(e))
+        {
+            dialogs.ShowError($"復元できませんでした。現在の文書は保持しています。\n{e.Message}");
+            return false;
+        }
+        finally { IsRecoveryBusy = false; }
+    }
+
+    public async Task DiscardRecoveryAsync(RecoveryKey key)
+    {
+        if (recovery is null || IsRecoveryBusy) return;
+        IsRecoveryBusy = true;
+        try { await recovery.DiscardAsync(key); }
+        finally { IsRecoveryBusy = false; }
+    }
+
+    // Call only after closing has been confirmed; CanClose itself must remain non-destructive.
+    public async Task CloseRecoveryAsync()
+    {
+        if (recovery is null) return;
+        IsRecoveryBusy = true;
+        await recovery.CloseAsync();
+    }
+
+    public bool CanClose() => !IsRecoveryBusy && ConfirmDiscard();
 
     public bool New()
     {
-        if (!ConfirmDiscard()) return false;
+        if (IsRecoveryBusy || !ConfirmDiscard()) return false;
         documents.New();
         DocumentChanged();
         return true;
@@ -84,7 +147,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool Open(string path)
     {
-        if (!ConfirmDiscard()) return false;
+        if (IsRecoveryBusy || !ConfirmDiscard()) return false;
         try
         {
             var fullPath = Path.GetFullPath(path);
@@ -102,6 +165,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool Save(bool saveAs = false)
     {
+        if (IsRecoveryBusy) return false;
         var path = saveAs || FilePath is null ? dialogs.ChooseSaveFile(FilePath) : FilePath;
         if (path is null) return false;
         try
@@ -222,7 +286,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         UndoCommand.Refresh(); RedoCommand.Refresh();
     }
 
-    private void OnSessionChanged(object? sender, EventArgs e) => Changed(nameof(Session));
+    private void OnSessionChanged(object? sender, EventArgs e)
+    {
+        recovery?.Track(Session);
+        Changed(nameof(Session));
+    }
 
     private void DocumentChanged()
     {
@@ -238,5 +306,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         editor.StateChanged -= EditorStateChanged;
         documents.SessionChanged -= OnSessionChanged;
         documents.Dispose();
+        recovery?.Dispose();
     }
 }

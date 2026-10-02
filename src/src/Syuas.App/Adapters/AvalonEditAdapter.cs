@@ -28,6 +28,7 @@ public sealed class AvalonEditAdapter : IEditorAdapter, IDisposable
     public bool CanRedo => editor.CanRedo;
     public int SelectionStart => editor.SelectionStart;
     public int SelectionLength => editor.SelectionLength;
+    public int CaretOffset => editor.CaretOffset;
     public int Line => editor.TextArea.Caret.Line;
     public int Column => editor.TextArea.Caret.Column;
 
@@ -43,6 +44,17 @@ public sealed class AvalonEditAdapter : IEditorAdapter, IDisposable
     public void MarkSaved()
     {
         editor.Document.UndoStack.MarkAsOriginalFile();
+        OnStateChanged(this, EventArgs.Empty);
+    }
+
+    public void LoadRecovery(string text, int selectionStart, int selectionLength, int caretOffset)
+    {
+        Load(text);
+        // Recovered text has never been saved in this process, even when it is empty.
+        editor.Document.UndoStack.DiscardOriginalFileMarker();
+        var start = Math.Clamp(selectionStart, 0, text.Length);
+        Select(start, Math.Clamp(selectionLength, 0, text.Length - start));
+        editor.CaretOffset = Math.Clamp(caretOffset, 0, text.Length);
         OnStateChanged(this, EventArgs.Empty);
     }
 

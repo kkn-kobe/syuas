@@ -9,6 +9,7 @@ using Syuas.App.Highlighting;
 using Syuas.App.Services;
 using Syuas.Core.Services;
 using Syuas.Core.ViewModels;
+using Syuas.App.Views;
 
 namespace Syuas.App;
 
@@ -17,6 +18,8 @@ public partial class MainWindow : Window
     private readonly AvalonEditAdapter adapter;
     private readonly MainViewModel viewModel;
     private readonly DispatcherTimer documentUpdate = new() { Interval = TimeSpan.FromMilliseconds(450) };
+    private readonly DispatcherTimer recoveryUpdate = new() { Interval = TimeSpan.FromSeconds(1) };
+    private bool recoveryInitialized, recoveryDialogOpen, closingApproved, closed;
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase) { ".adoc", ".asciidoc", ".ad", ".asc", ".txt" };
 
     public MainWindow()
@@ -33,17 +36,88 @@ public partial class MainWindow : Window
         Editor.TextChanged += OnSourceChanged;
         viewModel.PropertyChanged += OnViewModelChanged;
         documentUpdate.Tick += OnDocumentUpdate;
+        recoveryUpdate.Tick += OnRecoveryTick;
         DataContext = viewModel;
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e) => Editor.Focus();
-    private void OnClosing(object? sender, CancelEventArgs e) => e.Cancel = !viewModel.CanClose();
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Editor.Focus();
+        if (recoveryInitialized) return;
+        recoveryInitialized = true;
+        try
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "Recovery");
+            viewModel.EnableRecovery(new RecoveryService(new RecoveryStore(root)));
+            recoveryUpdate.Start();
+            await ShowRecoveryCandidates(true);
+        }
+        catch (Exception error) when (IsRecoveryError(error)) { viewModel.ReportRecoveryError(error.Message); }
+    }
+
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (closingApproved) return;
+        if (recoveryDialogOpen || !viewModel.CanClose()) { e.Cancel = true; return; }
+        if (!viewModel.HasRecovery) return;
+        e.Cancel = true;
+        IsEnabled = false;
+        recoveryUpdate.Stop();
+        await viewModel.CloseRecoveryAsync();
+        closingApproved = true;
+        _ = Dispatcher.BeginInvoke(new Action(Close));
+    }
     private void OnClosed(object? sender, EventArgs e)
     {
+        closed = true;
+        recoveryUpdate.Stop(); recoveryUpdate.Tick -= OnRecoveryTick;
         documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
         Editor.TextChanged -= OnSourceChanged; viewModel.PropertyChanged -= OnViewModelChanged;
         HtmlPreview.Dispose(); viewModel.Dispose(); adapter.Dispose();
     }
+    private async void OnRecoveryTick(object? sender, EventArgs e) => await viewModel.TickRecoveryAsync();
+    private async void OnRecoveryDocuments(object sender, RoutedEventArgs e) => await ShowRecoveryCandidates(false);
+    private async Task ShowRecoveryCandidates(bool startup)
+    {
+        if (recoveryDialogOpen || closed) return;
+        recoveryDialogOpen = true;
+        try
+        {
+            if (!viewModel.HasRecovery)
+            {
+                if (!startup) MessageBox.Show(this, "自動復元を開始できていません。ステータスバーを確認してください。", "SYUAS");
+                return;
+            }
+            while (!closed)
+            {
+                IsEnabled = false;
+                var candidates = await viewModel.ListRecoveryAsync();
+                IsEnabled = true;
+                if (closed) return;
+                if (candidates.Count == 0)
+                {
+                    if (!startup) MessageBox.Show(this, "復元可能な文書はありません。", "SYUAS");
+                    return;
+                }
+                var dialog = new RecoveryDialog(new(candidates)) { Owner = this };
+                if (dialog.ShowDialog() != true || dialog.SelectedKey is not { } key) return;
+                IsEnabled = false;
+                if (dialog.DiscardRequested)
+                {
+                    await viewModel.DiscardRecoveryAsync(key);
+                    continue;
+                }
+                if (await viewModel.RestoreRecoveryAsync(key)) return;
+            }
+        }
+        catch (Exception error) when (IsRecoveryError(error))
+        {
+            viewModel.ReportRecoveryError(error.Message);
+            MessageBox.Show(this, $"復元データの操作を完了できませんでした。\n{error.Message}", "SYUAS", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { recoveryDialogOpen = false; IsEnabled = true; if (!closed) Editor.Focus(); }
+    }
+    private static bool IsRecoveryError(Exception e) => e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
     private void OnSourceChanged(object? sender, EventArgs e) { documentUpdate.Stop(); documentUpdate.Start(); }
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {

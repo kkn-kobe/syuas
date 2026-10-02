@@ -104,6 +104,49 @@ public sealed class WindowTests
             conflictDialog.Close();
         }
 
+        var recoverySnapshot = new RecoverySnapshot(Guid.NewGuid(), 12, DateTimeOffset.Now, "復元する本文",
+            new FileBaseline(@"C:\Documents\日本語のフォルダー\manual.adoc", FileFingerprint.FromBytes("old"u8)), 0, 0, 0);
+        var recoveryModel = new RecoveryListViewModel([
+            new(new(Guid.NewGuid(), recoverySnapshot.DocumentId), recoverySnapshot)
+                { OriginalFile = new(FileComparisonStatus.Modified) },
+            new(new(Guid.NewGuid(), Guid.NewGuid()), recoverySnapshot with { Baseline = null }, true, "直前の世代から復元します。"),
+            new(new(Guid.NewGuid(), Guid.NewGuid()), null, Error: "復元データを読み取れません。元データは保持しています。")
+        ]);
+        var recoveryDialog = new RecoveryDialog(recoveryModel);
+        var recoveryPanel = (FrameworkElement)recoveryDialog.Content;
+        recoveryPanel.Measure(new Size(810, 460));
+        recoveryPanel.Arrange(new Rect(0, 0, 810, 460));
+        recoveryDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var restoreButton = Assert.IsType<Button>(recoveryDialog.FindName("RestoreButton"));
+        var laterButton = Assert.IsType<Button>(recoveryDialog.FindName("LaterButton"));
+        Assert.True(restoreButton.IsEnabled);
+        Assert.True(laterButton.IsDefault);
+        Assert.True(laterButton.IsCancel);
+        Assert.Same(laterButton, System.Windows.Input.FocusManager.GetFocusedElement(recoveryDialog));
+        var recoveryList = Assert.IsType<ListView>(recoveryDialog.FindName("RecoveryList"));
+        Assert.Equal(3, recoveryList.Items.Count);
+        recoveryList.SelectedIndex = 2;
+        recoveryDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Assert.False(restoreButton.IsEnabled);
+        Assert.True(Assert.IsType<Button>(recoveryDialog.FindName("DiscardButton")).IsEnabled);
+        recoveryList.SelectedIndex = 0;
+        recoveryDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        recoveryPanel.UpdateLayout();
+        if (Environment.GetEnvironmentVariable("SYUAS_RECOVERY_SCREENSHOT") is { Length: > 0 } recoveryImage)
+        {
+            var bitmap = new RenderTargetBitmap(810, 460, 96, 96, PixelFormats.Pbgra32);
+            var background = new DrawingVisual();
+            using (var drawing = background.RenderOpen())
+                drawing.DrawRectangle(recoveryDialog.Background, null, new Rect(0, 0, 810, 460));
+            bitmap.Render(background);
+            bitmap.Render(recoveryPanel);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create(recoveryImage);
+            encoder.Save(output);
+        }
+        recoveryDialog.Close();
+
         // Instantiate and lay out every form without showing OS dialogs.
         foreach (var kind in new[] { AssistanceKind.Heading, AssistanceKind.Image, AssistanceKind.Include,
             AssistanceKind.Link, AssistanceKind.CrossReference, AssistanceKind.Anchor, AssistanceKind.SourceBlock, AssistanceKind.Admonition })
