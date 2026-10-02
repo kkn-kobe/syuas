@@ -4,6 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <AssemblyName>SYUAS</AssemblyName>
+    <ApplicationIcon>Assets/Syuas.ico</ApplicationIcon>
     <RootNamespace>Syuas.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -11,6 +12,7 @@
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="Highlighting/AsciiDoc.xshd" />
+    <Resource Include="Assets/Syuas.ico" />
     <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

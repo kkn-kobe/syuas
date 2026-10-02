@@ -3,7 +3,7 @@
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:views="clr-namespace:Syuas.App.Views"
         Title="{Binding Title}" Width="1120" Height="760" MinWidth="760" MinHeight="460"
-        WindowStartupLocation="CenterScreen" Background="#F7F8FA"
+        WindowStartupLocation="CenterScreen" Background="#F7F8FA" Icon="/SYUAS;component/Assets/Syuas.ico"
         AllowDrop="True" PreviewDragOver="OnDragOver" PreviewDrop="OnDrop"
         Closing="OnClosing" Closed="OnClosed" Loaded="OnLoaded" PreviewKeyDown="OnPreviewKeyDown">
   <Window.InputBindings>
