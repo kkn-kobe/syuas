@@ -207,11 +207,13 @@ dotnet run --project tests/Syuas.RecoveryProbe/Syuas.RecoveryProbe.csproj --no-r
 
 詳細な障害シナリオ、実施結果、未検証の環境条件は [障害検証](docs/failure-validation.md) を参照してください。[利用説明](docs/recovery-guide.txt) はアプリに埋め込むため、配布後もヘルプから参照できます。
 
-## 表の再編集：読み戻し基盤（第1段階）
+## 表の再編集：読み戻し・対象範囲・置換（第1〜2段階）
 
 `AsciiDocTableParser.Parse()` で現在のSYUASの生成形式を `TableDefinition` へ読み戻せます。タイトル・列幅・ヘッダー・結合・複数行セルを復元し、再生成したソースとの完全一致を確認します。未対応形式や不正な結合には、日本語の理由と行・列番号を返します。モデル構築には、入力をコピーして構造を検証する `TableDefinition.FromCells()` を使用します。
 
-対応範囲とAPIの使い方は [表の再編集：読み戻し基盤](docs/table-reediting.md) を参照してください。表の位置特定・文書への置換・再編集メニューは後続段階で実装します。
+第2段階では、`AsciiDocTableLocator` がカーソル・選択範囲から対象表を特定し、`TableEditingService` が文書ID・本文リビジョン・元ソースを照合して置換します。周囲の文章、独立したAnchor、終了区切り直後の改行を維持し、表の更新を1回のUndo／Redoで戻せます。キャンセルや変更なしの適用では文書と履歴を変更しません。コード例・複合ブロックなどの対象外の表や、区切りを確定できない表には理由を返します。
+
+対応範囲とAPIの使い方は [表の再編集：読み戻しと対象範囲・置換](docs/table-reediting.md) を参照してください。再編集メニューとダイアログへの接続は第3段階で実装します。
 
 ## 構成
 
