@@ -31,14 +31,20 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer recoveryUpdate = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer externalUpdate = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool recoveryInitialized, recoveryDialogOpen, externalDialogOpen, closingApproved, closed;
+    private string[] startupFiles;
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase) { ".adoc", ".asciidoc", ".ad", ".asc", ".txt" };
 
-    public MainWindow()
+    public MainWindow() : this([]) { }
+
+    public MainWindow(IReadOnlyList<string> startupFiles) : this(startupFiles, null, null) { }
+
+    internal MainWindow(IReadOnlyList<string> startupFiles, IUserDialogs? userDialogs, IRecentFilesStore? recentStore)
     {
+        this.startupFiles = startupFiles.ToArray();
         InitializeComponent();
         var files = new Utf8FileService();
-        var dialogs = new WindowsDialogs(this);
-        var recent = new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json"));
+        var dialogs = userDialogs ?? new WindowsDialogs(this);
+        var recent = recentStore ?? new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json"));
         viewModel = new(() =>
         {
             var view = new DocumentEditorView { Visibility = Visibility.Collapsed };
@@ -73,6 +79,8 @@ public partial class MainWindow : Window
         externalUpdate.Start();
         if (recoveryInitialized) return;
         recoveryInitialized = true;
+        // Open the requested files before recovery prompts, even if recovery initialization fails.
+        OpenStartupFiles();
         try
         {
             var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "Recovery");
@@ -81,6 +89,14 @@ public partial class MainWindow : Window
             await ShowRecoveryCandidates(true);
         }
         catch (Exception error) when (IsRecoveryError(error)) { viewModel.ReportRecoveryError(error.Message); }
+    }
+
+    internal void OpenStartupFiles()
+    {
+        if (closed) return;
+        var paths = startupFiles;
+        startupFiles = [];
+        viewModel.OpenMany(paths);
     }
 
     private async void OnClosing(object? sender, CancelEventArgs e)

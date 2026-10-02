@@ -16,8 +16,9 @@ public sealed class WindowTests
     [Fact]
     public void MainWindowLoadsXamlResourcesAndViewModel() => Sta.Run(() =>
     {
-        var app = new Syuas.App.App();
-        app.InitializeComponent();
+        // Use a window-test host so dispatching never runs the production Startup with test-runner arguments.
+        var app = new Application();
+        app.Resources.Add("BooleanToVisibility", new BooleanToVisibilityConverter());
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var window = new MainWindow();
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
@@ -118,6 +119,7 @@ public sealed class WindowTests
         Assert.Equal(verticalOffset, sourceEditor.VerticalOffset, precision: 1);
         VerifyTabReordering(window, model, tabs, content);
         window.Close();
+        StartupFileChecks.Run();
 
         var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
             "== 操作手順\n\nSYUASで追記した説明です。\n\n* ローカルの変更\n",
