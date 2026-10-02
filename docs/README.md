@@ -292,4 +292,6 @@ Remove-Item Env:SYUAS_WEBVIEW_SMOKE
 
 エディタは [AvalonEdit 6.3.1.120](https://www.nuget.org/packages/AvalonEdit/6.3.1.120)（MIT License）を使用しています。
 
+AvalonEditおよびWebView2 SDKの配布用ライセンス・第三者通知は [src/Syuas.App/Licenses/THIRD-PARTY.md](src/Syuas.App/Licenses/THIRD-PARTY.md) にまとめています。`Licenses` フォルダーはビルド・公開時に自動コピーされるため、配布時もフォルダーごと同梱してください。WebView2 SDKの文書は、別途インストールするWebView2 Runtimeの利用条件とは別です。
+
 プレビューは [Microsoft.Web.WebView2 1.0.4191.47](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4191.47) と [Asciidoctor.js 4.1.0](https://www.npmjs.com/package/@asciidoctor/core/v/4.1.0) を使用します。同梱エンジンの出典・ハッシュ・ライセンスは `src/Syuas.App/PreviewAssets/THIRD-PARTY.md` を参照してください。
