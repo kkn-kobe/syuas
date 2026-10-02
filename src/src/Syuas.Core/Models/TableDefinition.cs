@@ -1,4 +1,9 @@
+using System.Globalization;
+
 namespace Syuas.Core.Models;
+
+// Immutable input for importing cells without executing designer merge operations.
+public sealed record TableCellDefinition(int Row, int Column, int RowSpan, int ColumnSpan, string Text);
 
 public sealed class TableCell
 {
@@ -36,6 +41,38 @@ public sealed class TableDefinition
         for (var row = 0; row < rows; row++)
             for (var column = 0; column < columns; column++) cells.Add(new(row, column));
         columnWidths.AddRange(Enumerable.Repeat("", columns));
+    }
+
+    public static TableDefinition FromCells(int rows, int columns, IEnumerable<TableCellDefinition> cells,
+        string title = "", bool hasHeader = false, IReadOnlyList<string>? columnWidths = null)
+    {
+        ArgumentNullException.ThrowIfNull(cells);
+        ArgumentNullException.ThrowIfNull(title);
+        var table = new TableDefinition(rows, columns);
+        if (title.IndexOfAny(['\r', '\n']) >= 0) throw new ArgumentException("表タイトルは1行で指定してください。", nameof(title));
+        table.Title = title;
+        if (columnWidths is not null)
+        {
+            if (columnWidths.Count != columns) throw new ArgumentException("列幅の数と列数が一致しません。", nameof(columnWidths));
+            for (var column = 0; column < columns; column++)
+            {
+                var width = columnWidths[column];
+                if (width is null || !string.IsNullOrWhiteSpace(width) &&
+                    (!int.TryParse(width, NumberStyles.None, CultureInfo.InvariantCulture, out var value) || value < 1))
+                    throw new ArgumentException("列幅は正の整数または空欄で指定してください。", nameof(columnWidths));
+                table.columnWidths[column] = width;
+            }
+        }
+        table.cells.Clear();
+        foreach (var cell in cells)
+        {
+            if (cell is null || cell.Text is null) throw new ArgumentException("セルと本文はnullにできません。", nameof(cells));
+            if (table.cells.Count >= rows * columns) throw new ArgumentException("セル数が表のサイズを超えています。", nameof(cells));
+            table.cells.Add(new(cell.Row, cell.Column) { RowSpan = cell.RowSpan, ColumnSpan = cell.ColumnSpan, Text = cell.Text });
+        }
+        table.HasHeader = hasHeader;
+        table.Validate();
+        return table;
     }
 
     public int RowCount { get; private set; }

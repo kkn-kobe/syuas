@@ -207,6 +207,12 @@ dotnet run --project tests/Syuas.RecoveryProbe/Syuas.RecoveryProbe.csproj --no-r
 
 詳細な障害シナリオ、実施結果、未検証の環境条件は [障害検証](docs/failure-validation.md) を参照してください。[利用説明](docs/recovery-guide.txt) はアプリに埋め込むため、配布後もヘルプから参照できます。
 
+## 表の再編集：読み戻し基盤（第1段階）
+
+`AsciiDocTableParser.Parse()` で現在のSYUASの生成形式を `TableDefinition` へ読み戻せます。タイトル・列幅・ヘッダー・結合・複数行セルを復元し、再生成したソースとの完全一致を確認します。未対応形式や不正な結合には、日本語の理由と行・列番号を返します。モデル構築には、入力をコピーして構造を検証する `TableDefinition.FromCells()` を使用します。
+
+対応範囲とAPIの使い方は [表の再編集：読み戻し基盤](docs/table-reediting.md) を参照してください。表の位置特定・文書への置換・再編集メニューは後続段階で実装します。
+
 ## 構成
 
 - `src/Syuas.Core`: エディタ非依存のモデル・Generator、ViewModel、ファイル操作、履歴、検索、挿入範囲・改行・カーソル位置の制御。
