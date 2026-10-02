@@ -25,6 +25,8 @@ public partial class MainWindow : Window
     }
     public ICSharpCode.AvalonEdit.TextEditor Editor => ActiveEditor;
     private readonly MainViewModel viewModel;
+    private readonly TabDragReorder tabDragReorder;
+    internal TabDragReorder TabReorder => tabDragReorder;
     private readonly DispatcherTimer documentUpdate = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer recoveryUpdate = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer externalUpdate = new() { Interval = TimeSpan.FromMilliseconds(250) };
@@ -59,6 +61,7 @@ public partial class MainWindow : Window
         documentUpdate.Tick += OnDocumentUpdate;
         recoveryUpdate.Tick += OnRecoveryTick;
         DataContext = viewModel;
+        tabDragReorder = new(DocumentTabs, viewModel);
 
         externalUpdate.Tick += OnExternalTick;
         Activated += OnActivated;
@@ -102,6 +105,7 @@ public partial class MainWindow : Window
         documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
         viewModel.PropertyChanged -= OnViewModelChanged;
         viewModel.ActiveDocumentChanged -= OnActiveDocumentChanged;
+        tabDragReorder.Dispose();
         HtmlPreview.Dispose(); viewModel.Dispose();
     }
     private void OnDocumentDisposed(object? sender, EventArgs e)

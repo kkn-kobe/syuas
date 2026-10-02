@@ -24,9 +24,8 @@
                     <TextBlock Text="Structure Your AsciiDoc Simply" FontSize="15" Foreground="#536579" Margin="0,4,0,0" />
         </StackPanel>
       </Grid>
-      <TextBlock Text="© 2026 KUBOYAMA Kyota" TextWrapping="Wrap" Foreground="#334155" />
-      <TextBlock Text="Technologies => .NET 8 / WPF / AvalonEdit / Asciidoctor.js / WebView2"
-                 TextWrapping="Wrap" FontSize="12" Foreground="#536579" Margin="0,10,0,0" />
+      <TextBlock Text="Version 1.0.0" TextWrapping="Wrap" Foreground="#334155" />
+            <TextBlock Text="© 2026 KUBOYAMA Kyota" TextWrapping="Wrap" FontSize="12" Foreground="#536579" Margin="0,10,0,0" />
     </StackPanel>
     <Border Grid.Row="1" Background="White" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="20,12">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

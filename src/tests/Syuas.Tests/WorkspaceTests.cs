@@ -9,6 +9,58 @@ namespace Syuas.Tests;
 public sealed class WorkspaceTests
 {
     [Fact]
+    public void ReorderingPreservesDocumentsSelectionAndUndoHistory() => Sta.Run(() =>
+    {
+        using var f = new Fixture();
+        var first = f.Model.ActiveDocument;
+        f.Editor.Text = "first";
+        f.Editor.Document.Insert(5, "!");
+        f.Model.New();
+        var second = f.Model.ActiveDocument;
+        f.Editor.Text = "second";
+        f.Model.New();
+        var third = f.Model.ActiveDocument;
+        f.Model.ActiveDocument = first;
+        var originalSession = first.Session;
+        var selectionChanges = 0;
+        f.Model.ActiveDocumentChanged += (_, _) => selectionChanges++;
+        Assert.True(f.Model.MoveDocument(first, 3));
+        Assert.Equal(new[] { second, third, first }, f.Model.Documents);
+        Assert.Same(first, f.Model.ActiveDocument);
+        Assert.Equal(originalSession, first.Session);
+        Assert.Equal(0, selectionChanges);
+        f.Model.UndoCommand.Execute(null);
+        Assert.Equal("first", f.Editor.Text);
+        f.Model.SelectRelative(1);
+        Assert.Same(second, f.Model.ActiveDocument);
+        Assert.True(f.Model.MoveDocument(first, 0));
+        Assert.Equal(new[] { first, second, third }, f.Model.Documents);
+        Assert.Same(second, f.Model.ActiveDocument);
+        f.Model.SelectRelative(-1);
+        f.Model.RedoCommand.Execute(null);
+        Assert.Equal("first!", f.Editor.Text);
+    });
+
+    [Fact]
+    public void ReorderingRejectsInvalidAndClosedDocumentsAndLeavesNoOpUnchanged() => Sta.RunAsync(async () =>
+    {
+        using var f = new Fixture();
+        var first = f.Model.ActiveDocument;
+        Assert.False(f.Model.MoveDocument(first, -1));
+        Assert.False(f.Model.MoveDocument(first, 2));
+        Assert.True(f.Model.MoveDocument(first, 0));
+        Assert.True(f.Model.MoveDocument(first, 1));
+        using var foreign = new Fixture();
+        Assert.False(f.Model.MoveDocument(foreign.Model.ActiveDocument, 0));
+        f.Model.New();
+        Assert.True(await f.Model.CloseDocumentAsync(first));
+        Assert.False(f.Model.MoveDocument(first, 0));
+        var remaining = Assert.Single(f.Model.Documents);
+        f.Model.Dispose();
+        Assert.False(f.Model.MoveDocument(remaining, 0));
+    });
+
+    [Fact]
     public void BatchOpenKeepsSuccessfulFilesAndReportsFailuresTogether() => Sta.Run(() =>
     {
         using var f = new Fixture();

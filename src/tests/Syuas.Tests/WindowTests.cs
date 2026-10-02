@@ -116,6 +116,7 @@ public sealed class WindowTests
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         content.UpdateLayout();
         Assert.Equal(verticalOffset, sourceEditor.VerticalOffset, precision: 1);
+        VerifyTabReordering(window, model, tabs, content);
         window.Close();
 
         var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
@@ -429,6 +430,80 @@ public sealed class WindowTests
         if (failure is not null) throw new InvalidOperationException("Table editing dialog failed", failure);
         Assert.True(accepted);
         Assert.Equal(2, attempts);
+    }
+
+    private static void VerifyTabReordering(MainWindow window, MainViewModel model, TabControl tabs, FrameworkElement content)
+    {
+        var selected = model.ActiveDocument;
+        var editor = window.ActiveEditor;
+        var offset = editor.VerticalOffset;
+        model.New();
+        model.ActiveDocument = selected;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        var before = model.Documents.ToArray();
+        var drag = window.TabReorder;
+        var firstItem = (TabItem)tabs.ItemContainerGenerator.ContainerFromIndex(0);
+        var closeButton = Descendants<Button>(firstItem).Single();
+        Assert.False(drag.CanStart(closeButton));
+        Assert.True(drag.CanStart(Descendants<TextBlock>(firstItem).First()));
+        var point = firstItem.TranslatePoint(new Point(2, firstItem.ActualHeight / 2), tabs);
+        var data = drag.CreateData(before[^1]);
+        Assert.True(drag.UpdateDrop(data, point));
+        var indicator = (Border)tabs.Template.FindName("DropIndicator", tabs);
+        Assert.Equal(Visibility.Visible, indicator.Visibility);
+        Assert.Equal(before, model.Documents); // Dragging shows placement but does not commit.
+        if (Environment.GetEnvironmentVariable("SYUAS_TAB_REORDER_SCREENSHOT") is { Length: > 0 } screenshot)
+        {
+            content.UpdateLayout();
+            RenderScreenshot(content, window.Background, 1120, 700, screenshot);
+        }
+        drag.ClearDrop();
+        Assert.Equal(Visibility.Collapsed, indicator.Visibility);
+        Assert.False(drag.CompleteDrop(data, new Point(-10, -10)));
+        Assert.False(drag.CompleteDrop(new DataObject(DataFormats.FileDrop, new[] { "other.adoc" }), point));
+        Assert.Equal(before, model.Documents);
+        Assert.True(drag.CompleteDrop(data, point));
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        Assert.Same(before[^1], model.Documents[0]);
+        Assert.Same(selected, model.ActiveDocument);
+        Assert.Same(selected, tabs.SelectedItem);
+        Assert.Same(editor, window.ActiveEditor);
+        Assert.Equal(offset, editor.VerticalOffset, precision: 1);
+
+        var lastItem = (TabItem)tabs.ItemContainerGenerator.ContainerFromIndex(tabs.Items.Count - 1);
+        point = lastItem.TranslatePoint(new Point(lastItem.ActualWidth - 2, lastItem.ActualHeight / 2), tabs);
+        Assert.True(drag.CompleteDrop(data, point));
+        content.UpdateLayout();
+        Assert.Equal(before, model.Documents);
+        Assert.Same(selected, tabs.SelectedItem);
+
+        // Overflow headers scroll while the pointer remains at the edge, then accept an end drop.
+        for (var i = 0; i < 20; i++) model.New();
+        model.ActiveDocument = selected;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.UpdateLayout();
+        var scroll = (ScrollViewer)tabs.Template.FindName("HeaderScroll", tabs);
+        Assert.True(scroll.ScrollableWidth > 0);
+        scroll.ScrollToLeftEnd();
+        content.UpdateLayout();
+        var viewport = Descendants<ScrollContentPresenter>(scroll).First();
+        point = viewport.TranslatePoint(new Point(viewport.ActualWidth - 2, 10), tabs);
+        data = drag.CreateData(selected);
+        Assert.True(drag.UpdateDrop(data, point));
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        while (scroll.HorizontalOffset < scroll.ScrollableWidth && timer.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Thread.Sleep(10);
+        }
+        Assert.Equal(scroll.ScrollableWidth, scroll.HorizontalOffset, precision: 1);
+        Assert.True(drag.CompleteDrop(data, point));
+        content.UpdateLayout();
+        Assert.Same(selected, model.Documents[^1]);
+        Assert.Same(selected, tabs.SelectedItem);
+        Assert.Equal(Visibility.Collapsed, indicator.Visibility);
     }
 
     private static void VerifyWebPreview(string directory)

@@ -22,6 +22,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string recoveryStatus = "";
     private string searchText = "", replacementText = "";
     private bool matchCase;
+    private bool reordering;
 
     public MainViewModel(Func<DocumentTabViewModel> createDocument, IUserDialogs dialogs, IRecentFilesStore recentStore)
     {
@@ -50,7 +51,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         get => activeDocument;
         set
         {
-            if (ReferenceEquals(value, activeDocument) || value is null || !documents.Contains(value) || IsBusy) return;
+            if (ReferenceEquals(value, activeDocument) || value is null || !documents.Contains(value) || IsBusy || reordering) return;
             activeDocument = value;
             value.SearchText = searchText;
             value.ReplacementText = replacementText;
@@ -173,6 +174,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var index = documents.IndexOf(ActiveDocument);
         ActiveDocument = documents[(index + offset + documents.Count) % documents.Count];
+    }
+    // insertionIndex is a boundary in the original list: 0 is before the first tab, Count is after the last.
+    public bool MoveDocument(DocumentTabViewModel document, int insertionIndex)
+    {
+        if (IsBusy || reordering || insertionIndex < 0 || insertionIndex > documents.Count) return false;
+        var oldIndex = documents.IndexOf(document);
+        if (oldIndex < 0) return false;
+        var newIndex = insertionIndex > oldIndex ? insertionIndex - 1 : insertionIndex;
+        if (newIndex == oldIndex) return true;
+        reordering = true;
+        try { documents.Move(oldIndex, newIndex); }
+        finally { reordering = false; }
+        // WPF may update selection while processing the collection notification. Keep the same document active.
+        Changed(nameof(ActiveDocument));
+        return true;
     }
     public async Task<bool> CloseDocumentAsync(DocumentTabViewModel document)
     {

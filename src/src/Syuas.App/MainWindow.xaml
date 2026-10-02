@@ -142,9 +142,14 @@
       </TabControl.Style>
       <TabControl.Template>
         <ControlTemplate TargetType="TabControl">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False">
-            <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="0" />
-          </ScrollViewer>
+          <Grid Background="Transparent" ClipToBounds="True">
+            <ScrollViewer x:Name="HeaderScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False">
+              <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="0" />
+            </ScrollViewer>
+            <Canvas IsHitTestVisible="False">
+              <Border x:Name="DropIndicator" Width="3" Background="#2463A6" Visibility="Collapsed" />
+            </Canvas>
+          </Grid>
         </ControlTemplate>
       </TabControl.Template>
       <TabControl.ItemTemplate>

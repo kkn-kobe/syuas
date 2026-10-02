@@ -57,7 +57,7 @@ Visual Studioからは `SYUAS.sln` を開き、`Syuas.App`をスタートアッ�
 | 次を検索 | F3（検索欄ではEnterも可） |
 | 検索欄を閉じる | Escape |
 
-検索条件はタブ間で共有し、検索・置換は選択中の文書のみを対象にします。タブの並べ替え、別ウィンドウへの分離、正常終了後のタブ構成の復元は未対応です。
+検索条件はタブ間で共有し、検索・置換は選択中の文書のみを対象にします。タブ見出しをドラッグし、青い挿入線の位置で離すと並べ替えられます。タブが多い場合は左右端で自動スクロールします。Escまたはタブ領域外へのドロップでは並べ替えを取り消します。Ctrl+Tabも並べ替え後の順序で移動します。別ウィンドウへの分離、正常終了後のタブ構成の復元は未対応です。
 
 置換は選択中の文字列が検索文字列と一致するときに実行し、次の一致箇所を選択します。一致しない場合は検索のみ行います。検索は正規表現ではなく文字列検索です。
 
@@ -312,5 +312,6 @@ SYUASは [MIT License](LICENSE) で提供します。著作権者は **KUBOYAMA 
 AvalonEditおよびWebView2 SDKの配布用ライセンス・第三者通知は [src/Syuas.App/Licenses/THIRD-PARTY.md](src/Syuas.App/Licenses/THIRD-PARTY.md) にまとめています。`Licenses` フォルダーはビルド・公開時に自動コピーされるため、配布時もフォルダーごと同梱してください。WebView2 SDKの文書は、別途インストールするWebView2 Runtimeの利用条件とは別です。
 
 プレビューは [Microsoft.Web.WebView2 1.0.4191.47](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4191.47) と [Asciidoctor.js 4.1.0](https://www.npmjs.com/package/@asciidoctor/core/v/4.1.0) を使用します。同梱エンジンの出典・ハッシュ・ライセンスは `src/Syuas.App/PreviewAssets/THIRD-PARTY.md` を参照してください。
+
 
 
