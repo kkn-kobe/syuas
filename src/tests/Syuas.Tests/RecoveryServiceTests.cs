@@ -6,6 +6,33 @@ namespace Syuas.Tests;
 public sealed class RecoveryServiceTests
 {
     [Fact]
+    public async Task DisableWaitsForActiveWritePreservesDraftAndRejectsFurtherCaptures()
+    {
+        var clock = new ManualClock();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var store = new MemoryStore { BeforeWrite = () => { started.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(5))); } };
+        using var service = new RecoveryService(store, clock);
+        var session = Session();
+        service.Track(session);
+        clock.Advance(5);
+        var write = service.TickAsync(() => Capture(session, clock));
+        Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
+        var stop = service.StopAsync();
+        Assert.False(stop.IsCompleted);
+        release.Set();
+        await stop;
+        await write;
+        service.Track(session with { Revision = 2 });
+        clock.Advance(30);
+        await service.TickAsync(() => throw new Exception("Disabled recovery must not capture content"));
+        Assert.Single(store.Active);
+        Assert.Single(store.Writes);
+        Assert.True(store.Disposed);
+        Assert.Empty(await service.ListAsync());
+    }
+
+    [Fact]
     public async Task IdleDebounceCapturesOnlyDirtyContentAndIgnoresSelectionNotifications()
     {
         var clock = new ManualClock();

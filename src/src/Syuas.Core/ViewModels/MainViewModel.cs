@@ -23,6 +23,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string searchText = "", replacementText = "";
     private bool matchCase;
     private bool reordering;
+    private bool previewAllowed = true;
 
     public MainViewModel(Func<DocumentTabViewModel> createDocument, IUserDialogs dialogs, IRecentFilesStore recentStore)
     {
@@ -96,7 +97,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string ExternalChangeStatus => ActiveDocument.ExternalChangeStatus;
     public string MonitoringStatus => ActiveDocument.MonitoringStatus;
     public bool IsSearchVisible { get => searchVisible; set { searchVisible = value; Changed(); } }
-    public bool IsPreviewVisible { get => previewVisible; set { previewVisible = value; Changed(); } }
+    public bool PreviewAllowed
+    {
+        get => previewAllowed;
+        set { previewAllowed = value; if (!value) IsPreviewVisible = false; Changed(); }
+    }
+    public bool IsPreviewVisible { get => previewVisible; set { previewVisible = value && PreviewAllowed; Changed(); } }
     public string SearchText { get => searchText; set { searchText = value; ActiveDocument.SearchText = value; Changed(); } }
     public string ReplacementText { get => replacementText; set { replacementText = value; ActiveDocument.ReplacementText = value; Changed(); } }
     public bool MatchCase { get => matchCase; set { matchCase = value; ActiveDocument.MatchCase = value; Changed(); } }
@@ -257,6 +263,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         recovery = service;
         foreach (var document in documents) Track(document);
         RecoveryStatus = service.Status;
+        Changed(nameof(HasRecovery));
+    }
+    public async Task DisableRecoveryAsync()
+    {
+        var previous = recovery;
+        recovery = null;
+        Changed(nameof(HasRecovery));
+        if (previous is not null) await previous.StopAsync();
+        RecoveryStatus = "自動復元: 設定により無効";
     }
     private void Track(DocumentTabViewModel document)
     {
@@ -268,16 +283,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public async Task TickRecoveryAsync()
     {
         if (recovery is null || IsBusy || ticking) return;
+        var service = recovery;
         ticking = true;
         try
         {
             foreach (var document in documents.ToArray())
             {
-                if (disposed) return;
+                if (disposed || recovery != service) return;
                 if (documents.Contains(document))
-                    await recovery.TickDocumentAsync(document.Session.DocumentId, document.CaptureRecovery);
+                    await service.TickDocumentAsync(document.Session.DocumentId, document.CaptureRecovery);
             }
-            RecoveryStatus = recovery.Status;
+            if (recovery == service) RecoveryStatus = service.Status;
         }
         finally { ticking = false; }
     }

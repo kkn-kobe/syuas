@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Windows.Controls;
 using Microsoft.Web.WebView2.Core;
 using Syuas.Core.Services;
+using Syuas.Core.Models;
 
 namespace Syuas.App.Views;
 
@@ -14,9 +15,22 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
     private string? documentPath;
     private long version;
     private bool disposed;
+    private readonly PreviewDataMode dataMode;
+    private readonly string dataRoot;
+    private PreviewDataSession? session;
+    private CoreWebView2Environment? environment;
+    private bool browserStarted;
+    private readonly TaskCompletionSource browserExited = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public string StatusText => Status.Text;
     public long RenderedVersion { get; private set; }
-    public HtmlPreviewControl() => InitializeComponent();
+    public HtmlPreviewControl() : this(PreviewDataMode.Keep,
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS")) { }
+    public HtmlPreviewControl(PreviewDataMode mode, string root)
+    {
+        dataMode = mode;
+        dataRoot = root;
+        InitializeComponent();
+    }
 
     public void InvalidateDocument()
     {
@@ -28,7 +42,7 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
 
     public async Task RenderAsync(string source, string? path)
     {
-        if (disposed) return;
+        if (disposed || dataMode == PreviewDataMode.Disabled) return;
         var requestVersion = ++version;
         documentPath = path;
         Status.Text = "HTMLプレビューを更新しています…";
@@ -50,10 +64,20 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
 
     private async Task InitializeBrowserAsync()
     {
-        var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "WebView2");
-        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: data);
+        var data = Path.Combine(dataRoot, "WebView2");
+        if (dataMode == PreviewDataMode.DeleteOnExit)
+        {
+            session = new PreviewDataSession(Path.Combine(dataRoot, "PreviewSessions"));
+            data = session.DataFolder;
+        }
+        environment = await CoreWebView2Environment.CreateAsync(userDataFolder: data);
+        // Environment overrides can redirect WebView2. Do not send document content there.
+        if (!string.Equals(Path.GetFullPath(environment.UserDataFolder), Path.GetFullPath(data), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("WebView2の保存先が設定と異なるため、プレビューを停止しました。");
+        environment.BrowserProcessExited += OnBrowserExited;
         if (disposed) return;
         await Browser.EnsureCoreWebView2Async(environment);
+        browserStarted = true;
         if (disposed) return;
         var core = Browser.CoreWebView2;
         core.Settings.AreDevToolsEnabled = false;
@@ -136,6 +160,40 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
         }
     }
 
-    public void Dispose() { disposed = true; version++; ready.TrySetCanceled(); Browser.Dispose(); }
+    private void OnBrowserExited(object? sender, CoreWebView2BrowserProcessExitedEventArgs e) => browserExited.TrySetResult();
+
+    public async Task<string?> ShutdownAsync()
+    {
+        Dispose();
+        try
+        {
+            // Initialization may be awaiting WebView2 creation. Let it settle before cleanup.
+            if (initialization is not null)
+            {
+                try { await initialization.WaitAsync(TimeSpan.FromSeconds(10)); }
+                catch (TimeoutException) { return "プレビューの初期化終了を確認できません。残存データは次回起動時に削除を再試行します。"; }
+                catch (Exception e) when (e is not OutOfMemoryException) { }
+            }
+            if (session is null) return null;
+            if (browserStarted)
+                await browserExited.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // Failed initialization may still leave locked files. Report a deletion failure.
+            await Task.Run(session.DeleteData);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        { return $"プレビューデータを削除できませんでした。次回起動時に再試行します。\n{session?.DataFolder}\n{e.Message}"; }
+        finally
+        {
+            if (environment is not null) environment.BrowserProcessExited -= OnBrowserExited;
+            session?.Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true; version++; ready.TrySetCanceled(); Browser.Dispose();
+    }
 }
 

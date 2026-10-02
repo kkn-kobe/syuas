@@ -20,6 +20,7 @@ public sealed class WindowTests
         var app = new Application();
         app.Resources.Add("BooleanToVisibility", new BooleanToVisibilityConverter());
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        VerifySettings();
         var window = new MainWindow();
         window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
         var content = (FrameworkElement)window.Content;
@@ -355,7 +356,7 @@ public sealed class WindowTests
         VerifyTableEditingDialog();
         if (Environment.GetEnvironmentVariable("SYUAS_WEBVIEW_SMOKE") is { Length: > 0 } smokeFolder) VerifyWebPreview(smokeFolder);
         if (Environment.GetEnvironmentVariable("SYUAS_TABLE_COMPATIBILITY_SMOKE") is { Length: > 0 } tablesFolder) TableRenderingChecks.Run(tablesFolder);
-    });
+    }, timeoutSeconds: Environment.GetEnvironmentVariable("SYUAS_WEBVIEW_SMOKE") is { Length: > 0 } ? 60 : 20);
 
     private static void VerifyTableEditingDialog()
     {
@@ -517,16 +518,19 @@ public sealed class WindowTests
         imageEncoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
             new byte[] { 220, 130, 50, 255, 220, 130, 50, 255, 220, 130, 50, 255, 220, 130, 50, 255 }, 8)));
         using (var imageStream = File.Create(Path.Combine(directory, "pixel.png"))) imageEncoder.Save(imageStream);
-        var preview = new HtmlPreviewControl();
+        var previewData = Path.Combine(directory, "preview-data-" + Guid.NewGuid().ToString("N"));
+        var preview = new HtmlPreviewControl(PreviewDataMode.DeleteOnExit, previewData);
         var host = new Window { Content = preview, Width = 700, Height = 550, ShowInTaskbar = false, ShowActivated = false, Opacity = 0 };
         host.Show();
+        var rendered = false;
         try
         {
             var source = "= Preview\n\n== Unsaved edit\n\ninclude::included.adoc[tags=\"shown\",leveloffset=+1,encoding=UTF-8]\n\ninclude::missing.adoc[opts=optional]\n\nimage::pixel.png[Test image]\n\n++++\n<script>window.evil = true</script>\n++++";
             var task = host.Dispatcher.Invoke(() => preview.RenderAsync(source, Path.Combine(directory, "main.adoc")));
-            PumpUntil(host, () => task.IsCompleted && (preview.RenderedVersion > 0 || preview.StatusText.Contains("できません") || preview.StatusText.Contains("失敗")));
+            PumpUntil(host, () => task.IsCompleted && (preview.RenderedVersion > 0 || preview.StatusText.Contains("できません") || preview.StatusText.Contains("失敗")), timeoutSeconds: 30);
             task.GetAwaiter().GetResult();
             Assert.True(preview.RenderedVersion > 0, preview.StatusText);
+            rendered = true;
             string html = "";
             PumpUntil(host, () =>
             {
@@ -587,7 +591,81 @@ public sealed class WindowTests
             PumpUntil(host, () => staleResource.IsCompleted);
             Assert.NotEqual("200", staleResource.Result);
         }
-        finally { preview.Dispose(); host.Close(); }
+        finally
+        {
+            var shutdown = host.Dispatcher.Invoke(preview.ShutdownAsync);
+            PumpUntil(host, () => shutdown.IsCompleted);
+            var cleanupError = shutdown.GetAwaiter().GetResult();
+            if (rendered)
+            {
+                Assert.Null(cleanupError);
+                Assert.DoesNotContain(Directory.EnumerateDirectories(Path.Combine(previewData, "PreviewSessions")),
+                    path => Directory.Exists(Path.Combine(path, "Data")));
+            }
+            host.Close();
+        }
+    }
+
+    private static void VerifySettings()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "SYUAS-settings-ui-" + Guid.NewGuid().ToString("N"));
+        var store = new SettingsStore(Path.Combine(root, "settings.json"));
+        store.Save(AppSettings.Restricted);
+        var window = new MainWindow([], null, null, root);
+        var model = (MainViewModel)window.DataContext;
+        try
+        {
+            Assert.False(model.PreviewAllowed);
+            model.IsPreviewVisible = true;
+            Assert.False(model.IsPreviewVisible);
+            Assert.False(model.HasRecovery);
+            var preview = (HtmlPreviewControl)((Border)window.FindName("PreviewHost")).Child;
+            var render = preview.RenderAsync("secret", null);
+            PumpUntil(window, () => render.IsCompleted);
+            Assert.Null(((Microsoft.Web.WebView2.Wpf.WebView2)preview.FindName("Browser")).CoreWebView2);
+            Assert.False(Directory.Exists(Path.Combine(root, "Recovery")));
+            Assert.False(Directory.Exists(Path.Combine(root, "WebView2")));
+            Assert.False(Directory.Exists(Path.Combine(root, "PreviewSessions")));
+            var enable = window.ApplySettingsAsync(new(true, PreviewDataMode.DeleteOnExit));
+            PumpUntil(window, () => enable.IsCompleted);
+            enable.GetAwaiter().GetResult();
+            Assert.True(model.HasRecovery);
+            Assert.True(model.PreviewAllowed);
+            var disable = window.ApplySettingsAsync(new(false, PreviewDataMode.DeleteOnExit));
+            PumpUntil(window, () => disable.IsCompleted);
+            disable.GetAwaiter().GetResult();
+            Assert.False(model.HasRecovery);
+            Assert.True(model.PreviewAllowed);
+            Assert.Contains("無効", model.RecoveryStatus);
+            var again = window.ApplySettingsAsync(new(true, PreviewDataMode.Keep));
+            PumpUntil(window, () => again.IsCompleted);
+            again.GetAwaiter().GetResult();
+            Assert.True(model.HasRecovery);
+            var stop = window.ApplySettingsAsync(AppSettings.Restricted);
+            PumpUntil(window, () => stop.IsCompleted);
+            stop.GetAwaiter().GetResult();
+
+            var settingsModel = new SettingsViewModel(new(false, PreviewDataMode.DeleteOnExit));
+            var dialog = new SettingsDialog(settingsModel);
+            var content = (FrameworkElement)dialog.Content;
+            content.Measure(new Size(590, 600));
+            content.Arrange(new Rect(0, 0, 590, content.DesiredSize.Height));
+            content.UpdateLayout();
+            var combo = Descendants<ComboBox>(content).Single();
+            Assert.Equal(PreviewDataMode.DeleteOnExit, combo.SelectedValue);
+            combo.SelectedValue = PreviewDataMode.Disabled;
+            Assert.Equal(PreviewDataMode.Disabled, settingsModel.ToSettings().PreviewData);
+            if (Environment.GetEnvironmentVariable("SYUAS_SETTINGS_SCREENSHOT") is { Length: > 0 } image)
+                RenderScreenshot(content, dialog.Background, 590, (int)content.ActualHeight + 48, image);
+            dialog.Close();
+        }
+        finally
+        {
+            window.Close();
+            window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            model.Dispose();
+            Directory.Delete(root, true);
+        }
     }
 
     private static void RenderScreenshot(FrameworkElement panel, Brush backgroundBrush, int width, int height, string path)
@@ -606,12 +684,12 @@ public sealed class WindowTests
     private static Task<string> InspectPreview(HtmlPreviewControl preview, string script)
         => ((Microsoft.Web.WebView2.Wpf.WebView2)preview.FindName("Browser")).ExecuteScriptAsync(script);
 
-    private static void PumpUntil(Window window, Func<bool> done)
+    private static void PumpUntil(Window window, Func<bool> done, int timeoutSeconds = 15)
     {
         var timer = System.Diagnostics.Stopwatch.StartNew();
         while (!done())
         {
-            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(15), "WebView2 integration check timed out.");
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(timeoutSeconds), "WebView2 integration check timed out.");
             window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
             Thread.Sleep(10);
         }

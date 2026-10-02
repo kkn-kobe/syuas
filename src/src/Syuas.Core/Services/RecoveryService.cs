@@ -18,7 +18,8 @@ public sealed class RecoveryService : IDisposable
         public long? WrittenRevision;
         public bool Writing;
     }
-    private bool stopped, disposed;
+    private volatile bool stopped;
+    private bool disposed;
     // Accessed only by the serialized storage queue; retry failed cleanup at confirmed close.
     private readonly HashSet<Guid> pendingRetirements = [];
     private bool closeSucceeded = true;
@@ -81,6 +82,7 @@ public sealed class RecoveryService : IDisposable
         {
             var success = await Enqueue(() =>
             {
+                if (stopped) return;
                 store.Write(snapshot);
                 pendingRetirements.Remove(snapshot.DocumentId);
                 status = $"復元用コピー: {snapshot.CapturedAt.ToLocalTime():HH:mm:ss}";
@@ -130,6 +132,7 @@ public sealed class RecoveryService : IDisposable
 
     public async Task<IReadOnlyList<RecoveryCandidate>> ListAsync()
     {
+        if (stopped) return [];
         IReadOnlyList<RecoveryCandidate> result = [];
         if (!await Enqueue(() => result = store.ListCandidates().Select(c => c.Snapshot?.Baseline is { } baseline
             ? c with { OriginalFile = files.Compare(baseline) } : c).ToArray()))
@@ -139,6 +142,7 @@ public sealed class RecoveryService : IDisposable
 
     public async Task<RecoverySnapshot> ClaimAsync(RecoveryKey key)
     {
+        if (stopped) throw new InvalidOperationException("自動復元は無効です。");
         RecoverySnapshot? snapshot = null;
         var id = trackedDocuments.ContainsKey(key.DocumentId) ? Guid.NewGuid() : key.DocumentId;
         if (!await Enqueue(() => snapshot = store.Claim(key, id))) throw new IOException(status);
@@ -151,6 +155,13 @@ public sealed class RecoveryService : IDisposable
     }
 
     public Task DrainAsync() => tail;
+    // Settings changes preserve existing drafts; disabling is not a discard operation.
+    public async Task StopAsync()
+    {
+        stopped = true;
+        await tail;
+        Dispose();
+    }
     public async Task<bool> CloseAsync()
     {
         if (stopped) { await tail; return closeSucceeded; }
