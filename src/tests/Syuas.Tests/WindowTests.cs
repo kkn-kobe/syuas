@@ -124,6 +124,20 @@ public sealed class WindowTests
             RenderScreenshot(helpPanel, helpDialog.Background, 780, 640, helpImage);
         helpDialog.Close();
 
+        var tableHelp = new TableEditingHelpDialog();
+        var tableGuide = Assert.IsType<TextBox>(tableHelp.FindName("GuideText"));
+        Assert.True(tableGuide.IsReadOnly);
+        Assert.Contains("未適用", tableGuide.Text);
+        Assert.Contains("noheader", tableGuide.Text);
+        var tableHelpPanel = (FrameworkElement)tableHelp.Content;
+        tableHelpPanel.Measure(new Size(780, 640));
+        tableHelpPanel.Arrange(new Rect(0, 0, 780, 640));
+        tableHelpPanel.UpdateLayout();
+        Assert.True(tableGuide.ActualHeight > 400);
+        if (Environment.GetEnvironmentVariable("SYUAS_TABLE_HELP_SCREENSHOT") is { Length: > 0 } tableHelpImage)
+            RenderScreenshot(tableHelpPanel, tableHelp.Background, 780, 640, tableHelpImage);
+        tableHelp.Close();
+
         foreach (var status in Enum.GetValues<FileObservationStatus>())
         {
             var conflict = new SaveConflictViewModel(@"C:\Documents\日本語のフォルダー\manual.adoc",
@@ -306,6 +320,7 @@ public sealed class WindowTests
         tableDialog.Close();
         VerifyTableEditingDialog();
         if (Environment.GetEnvironmentVariable("SYUAS_WEBVIEW_SMOKE") is { Length: > 0 } smokeFolder) VerifyWebPreview(smokeFolder);
+        if (Environment.GetEnvironmentVariable("SYUAS_TABLE_COMPATIBILITY_SMOKE") is { Length: > 0 } tablesFolder) TableRenderingChecks.Run(tablesFolder);
     });
 
     private static void VerifyTableEditingDialog()

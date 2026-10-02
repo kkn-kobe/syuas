@@ -207,7 +207,7 @@ dotnet run --project tests/Syuas.RecoveryProbe/Syuas.RecoveryProbe.csproj --no-r
 
 詳細な障害シナリオ、実施結果、未検証の環境条件は [障害検証](docs/failure-validation.md) を参照してください。[利用説明](docs/recovery-guide.txt) はアプリに埋め込むため、配布後もヘルプから参照できます。
 
-## 表の再編集（第1〜3段階）
+## 表の再編集（第1〜4段階）
 
 表の中にカーソルを置くか、1つの表の中を選択し、「編集 → 表を再編集…」または右クリックメニューの「表を再編集…」を選びます。既存の内容・結合・列幅・ヘッダーを読み込んだデザイナーで修正し、「適用」で元の表へ反映できます。新規作成は引き続き「挿入 → 表…」を使います。
 
@@ -217,7 +217,9 @@ dotnet run --project tests/Syuas.RecoveryProbe/Syuas.RecoveryProbe.csproj --no-r
 
 第2段階では、`AsciiDocTableLocator` がカーソル・選択範囲から対象表を特定し、`TableEditingService` が文書ID・本文リビジョン・元ソースを照合して置換します。周囲の文章、独立したAnchor、終了区切り直後の改行を維持し、表の更新を1回のUndo／Redoで戻せます。キャンセルや変更なしの適用では文書と履歴を変更しません。コード例・複合ブロックなどの対象外の表や、区切りを確定できない表には理由を返します。
 
-対応範囲、操作方法、APIの使い方は [表の再編集](docs/table-reediting.md) を参照してください。表示結果との照合など、互換性検証の拡充は第4段階で行います。
+第4段階では保存済みサンプルによる互換性テスト、Asciidoctor.jsによるHTMLの照合、保存・復元・外部変更との統合検証を追加しています。「ヘルプ → 表の再編集の使い方」から、操作方法・対応外の形式・保存と復元の注意点をオフラインで確認できます。
+
+対応範囲とAPIは [表の再編集](docs/table-reediting.md)、検証内容と再実行手順は [表の互換性検証](docs/table-compatibility-validation.md)、保存済みの表は [サンプル一覧](samples/table-reediting/README.md) を参照してください。
 
 ## 構成
 

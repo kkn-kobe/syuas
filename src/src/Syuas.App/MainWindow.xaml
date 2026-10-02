@@ -92,6 +92,7 @@
         <MenuItem Header="右端で折り返す" IsCheckable="True" IsChecked="{Binding WordWrap, ElementName=Editor}" />
       </MenuItem>
       <MenuItem Header="ヘルプ(_H)">
+        <MenuItem Header="表の再編集の使い方" Click="OnTableEditingHelp" />
         <MenuItem Header="自動復元と外部変更の使い方" Click="OnRecoveryHelp" />
         <Separator />
         <MenuItem Header="SYUASについて" Click="OnAbout" />

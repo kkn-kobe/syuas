@@ -13,6 +13,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="Highlighting/AsciiDoc.xshd" />
     <EmbeddedResource Include="../../docs/recovery-guide.txt" LogicalName="Syuas.RecoveryGuide.txt" />
+    <EmbeddedResource Include="../../docs/table-reediting-guide.txt" LogicalName="Syuas.TableReeditingGuide.txt" />
     <Resource Include="Assets/Syuas.ico" />
     <Resource Include="Assets/Syuas.png" />
     <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

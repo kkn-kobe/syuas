@@ -1,0 +1,17 @@
+<Window x:Class="Syuas.App.Views.TableEditingHelpDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="表の再編集の使い方 — SYUAS" Width="820" Height="700" MinWidth="550" MinHeight="380"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="#F7F8FA"
+        FocusManager.FocusedElement="{Binding ElementName=GuideText}">
+  <DockPanel Margin="22">
+    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+      <TextBlock Text="表の再編集の使い方" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Text="操作方法、対応する表、保存と復元の扱いを確認できます。" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#536579" />
+    </StackPanel>
+    <Button DockPanel.Dock="Bottom" Content="閉じる" HorizontalAlignment="Right" Padding="20,7" Margin="0,16,0,0"
+            IsDefault="True" IsCancel="True" Click="OnClose" />
+    <TextBox x:Name="GuideText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+             Padding="16" FontSize="15" AutomationProperties.Name="表の再編集の利用説明" />
+  </DockPanel>
+</Window>
