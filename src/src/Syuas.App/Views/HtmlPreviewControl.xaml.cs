@@ -70,7 +70,13 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
             session = new PreviewDataSession(Path.Combine(dataRoot, "PreviewSessions"));
             data = session.DataFolder;
         }
-        environment = await CoreWebView2Environment.CreateAsync(userDataFolder: data);
+        var options = new CoreWebView2EnvironmentOptions
+        {
+            // Opt into app-managed reporting to stop automatic crash uploads to Microsoft.
+            // This does not prevent local crash dumps or other diagnostic data collection.
+            IsCustomCrashReportingEnabled = true
+        };
+        environment = await CoreWebView2Environment.CreateAsync(userDataFolder: data, options: options);
         // Environment overrides can redirect WebView2. Do not send document content there.
         if (!string.Equals(Path.GetFullPath(environment.UserDataFolder), Path.GetFullPath(data), StringComparison.OrdinalIgnoreCase))
             throw new IOException("WebView2の保存先が設定と異なるため、プレビューを停止しました。");
@@ -80,6 +86,8 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
         browserStarted = true;
         if (disposed) return;
         var core = Browser.CoreWebView2;
+        // The preview only displays local content. Apply before the first navigation.
+        core.Settings.IsReputationCheckingRequired = false;
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreDefaultContextMenusEnabled = false;
         core.Settings.AreHostObjectsAllowed = false;

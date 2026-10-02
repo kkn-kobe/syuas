@@ -20,6 +20,16 @@
 
 以前の「保持する」で保存されたWebView2データ、以前の復元用コピー、最近使用したファイルの履歴、ユーザーが保存した文書、文書と同じフォルダーのバックアップは、この設定の変更では削除しません。設定を切り替える前に作成された内容が残り得る点に注意してください。
 
+## WebView2のSmartScreenとクラッシュ報告
+
+SYUASのHTMLプレビューでは、Microsoft Defender SmartScreenを明示的に無効化し、WebView2のクラッシュ情報のMicrosoftへの自動送信も停止しています。「保持する」「終了時に削除する」のどちらでも適用します。
+
+初期化時に `CoreWebView2EnvironmentOptions.IsCustomCrashReportingEnabled = true` を指定して自動送信を停止し、最初のページ表示より前に `CoreWebView2Settings.IsReputationCheckingRequired = false` を設定します。SYUAS独自のクラッシュ情報送信処理は設けていません。
+
+クラッシュダンプのローカル生成や、WebView2のその他の診断データ収集をすべて停止する設定ではありません。任意の診断データはWindowsの診断設定に従い、必須の診断データは別に収集されます。詳細はMicrosoftの[WebView2のデータとプライバシー](https://learn.microsoft.com/ja-jp/microsoft-edge/webview2/concepts/data-privacy)を参照してください。
+
+変更前のSYUASが起動中の場合は、すべて終了してから更新版を起動してください。同じユーザーデータフォルダーを使うWebView2間ではSmartScreenの設定が共有されます。
+
 ## 設定の保存・共有
 
 設定値だけを `%LOCALAPPDATA%\SYUAS\settings.json` に保存します。同じユーザーで起動しているSYUASは約1秒ごとに変更を確認します。別ウィンドウでダイアログや文書操作が進行中の場合、反映はその操作終了後になります。すべてのウィンドウに反映されるまでを含む、瞬時の一括停止を保証する機能ではありません。
