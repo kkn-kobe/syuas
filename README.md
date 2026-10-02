@@ -80,7 +80,7 @@ WebView2 Runtimeがない場合もソース編集は利用できます。プレ�
 
 既存の表は、表の中にカーソルを置いて「編集 → 表を再編集…」または右クリックメニューから開けます。**再編集の対象は、現在のSYUASが生成する形式の表に限られます。** CSV形式、1行に複数セルを書く形式、追加属性・セルスタイル・includeを含む表などは対象外です。
 
-詳しい操作と対応範囲は、[表の作成・再編集の使い方](docs/table-reediting-guide.txt)と[表のサンプル](samples/table-reediting/README.md)を参照してください。使い方はアプリ内の「ヘルプ」からも閲覧できます。
+詳しい操作と対応範囲は、[表の作成・再編集の使い方](docs/table-reediting-guide.txt)を参照してください。使い方はアプリ内の「ヘルプ」からも閲覧できます。
 
 ### HTMLプレビュー
 
@@ -143,49 +143,41 @@ C#／.NET 8／WPFを使用し、MVVM構成で実装しています。ビルド�
 リポジトリを取得し、ルートフォルダーで次のコマンドを実行します。
 
 ```powershell
-dotnet restore SYUAS.sln
-dotnet build SYUAS.sln --no-restore
-dotnet test SYUAS.sln --no-restore
-dotnet run --project src/Syuas.App/Syuas.App.csproj --no-restore
+dotnet restore src/SYUAS.sln
+dotnet build src/SYUAS.sln --no-restore
+dotnet run --project src/src/Syuas.App/Syuas.App.csproj --no-restore
 ```
 
-Visual Studioを使用する場合は、.NETデスクトップ開発用の環境を用意して `SYUAS.sln` を開き、`Syuas.App` をスタートアッププロジェクトに指定します。
+Visual Studioを使用する場合は、.NETデスクトップ開発用の環境を用意して `src/SYUAS.sln` を開き、`Syuas.App` をスタートアッププロジェクトに指定します。
 
 ### 配布用ファイルの作成
 
-Windows x64向けに、.NETランタイムを同梱しない構成で出力する例です。この構成での実行には、x64版の.NET 8 Desktop Runtimeが必要です。
+リポジトリのルートフォルダーで、Windows x64向けに、.NETランタイムを同梱しない構成で出力する例です。この構成での実行には、x64版の.NET 8 Desktop Runtimeが必要です。
 
 ```powershell
-dotnet publish src/Syuas.App/Syuas.App.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/win-x64
+dotnet publish src/src/Syuas.App/Syuas.App.csproj -c Release -r win-x64 --self-contained false -o .local/publish/win-x64
 ```
 
-`artifacts/publish/win-x64` の内容をフォルダーごと配布します。`LICENSE`、`Licenses`、`PreviewAssets` はビルド設定により出力先へコピーされます。配布時もこれらを含めてください。
+`.local/publish/win-x64` は、上のコマンドでローカルに生成する出力先です。配布する場合は、その内容をフォルダーごとまとめます。`LICENSE`、`Licenses`、`PreviewAssets` はビルド設定により出力先へコピーされます。配布時もこれらを含めてください。
 
 ### プロジェクト構成
 
 | パス | 内容 |
 | --- | --- |
-| `src/Syuas.Core` | モデル、AsciiDoc生成・表解析、文書管理、復元、検索、ViewModel |
-| `src/Syuas.App` | WPF画面、AvalonEditアダプター、WebView2プレビュー、ダイアログ |
-| `tests/Syuas.Tests` | 記法生成、表編集、ファイル操作、復元、WPF画面などのテスト |
-| `tests/Syuas.RecoveryProbe` | 子プロセスを使った異常終了・復元の検証ツール |
+| `src/SYUAS.sln` | Visual Studioソリューション |
+| `src/src/Syuas.Core` | モデル、AsciiDoc生成・表解析、文書管理、復元、検索、ViewModel |
+| `src/src/Syuas.App` | WPF画面、AvalonEditアダプター、WebView2プレビュー、ダイアログ |
+| `src/tests/Syuas.Tests` | 記法生成、表編集、ファイル操作、復元、WPF画面などのテスト |
+| `src/tests/Syuas.RecoveryProbe` | 子プロセスを使った異常終了・復元の検証ツール |
 | `docs` | 利用説明、設計、検証手順 |
-| `samples` | 編集・入力補助・プレビュー・表の再編集用のサンプル |
 
 AsciiDocの生成ロジックはUIから分離しています。AvalonEditへの直接依存はApp側に閉じ込め、Coreのモデル・生成処理を単体テストできる構成です。
 
-実際のWebView2を使った追加の統合確認は、WebView2 Runtimeを利用できるWindows環境で実行します。結果のHTMLとPNGは指定フォルダーに出力されます。
+### テストについて
 
-```powershell
-$env:SYUAS_WEBVIEW_SMOKE = Join-Path $PWD 'artifacts/webview-smoke'
-try {
-    dotnet test tests/Syuas.Tests/Syuas.Tests.csproj --filter FullyQualifiedName~WindowTests
-} finally {
-    Remove-Item Env:SYUAS_WEBVIEW_SMOKE
-}
-```
+テストコードは `src/tests` に含まれますが、一部のテストは公開対象に含まれない検証用データを参照します。そのため、現時点では公開リポジトリだけで全テストを実行することはできません。上記のビルド・起動手順は、これらの検証用データを必要としません。
 
-## ドキュメント・サンプル
+## ドキュメント
 
 - [表の作成・再編集の使い方](docs/table-reediting-guide.txt)
 - [自動復元と外部変更の使い方](docs/recovery-guide.txt)
@@ -193,7 +185,8 @@ try {
 - [タブエディターの仕様](docs/tab-editor.md)
 - [表の再編集の設計](docs/table-reediting.md)・[表デザイナーのUndo／Redo](docs/table-designer-history.md)
 - [表の互換性検証](docs/table-compatibility-validation.md)・[障害検証](docs/failure-validation.md)
-- サンプル：[基本編集](samples/phase1.adoc)・[入力補助](samples/phase2.adoc)・[セル結合](samples/phase3.adoc)・[文書構造とプレビュー](samples/phase4.adoc)・[表の再編集](samples/table-reediting/README.md)
+
+設計・検証資料には、開発用の非公開データや検証結果を前提とする記述が含まれます。
 
 [AGENTS.md](docs/AGENTS.md)には当初の要件と開発優先順位を記載しています。現在の機能・対応範囲は、このREADMEと各ドキュメントを参照してください。
 
@@ -214,6 +207,6 @@ Copyright (c) 2026 KUBOYAMA Kyota
 | Asciidoctor.js | HTML変換 | MIT |
 | Microsoft.Web.WebView2 SDK | HTMLプレビューの表示 | BSD 3-Clause |
 
-バージョン・出典・ライセンス全文は、[外部ライブラリのライセンスと第三者通知](src/Syuas.App/Licenses/THIRD-PARTY.md)および[Asciidoctor.jsの同梱情報](src/Syuas.App/PreviewAssets/THIRD-PARTY.md)を参照してください。別途導入するWebView2 Runtimeには、SDKとは別の利用条件が適用されます。
+バージョン・出典・ライセンス全文は、[外部ライブラリのライセンスと第三者通知](src/src/Syuas.App/Licenses/THIRD-PARTY.md)および[Asciidoctor.jsの同梱情報](src/src/Syuas.App/PreviewAssets/THIRD-PARTY.md)を参照してください。別途導入するWebView2 Runtimeには、SDKとは別の利用条件が適用されます。
 
 アプリ内の「ヘルプ → SYUASについて → ライセンス…」からも、オフラインでライセンスと第三者通知を確認できます。
