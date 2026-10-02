@@ -1,0 +1,8 @@
+[cols="2*",options="noheader"]
+|===
+|日本語 😀
+|B
+
+|C
+|
+|===

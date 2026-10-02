@@ -1,0 +1,38 @@
+= SYUAS 動作確認
+:toc:
+:imagesdir: images
+
+== エディタ基盤
+
+日本語を含むAsciiDoc文書です。行番号、検索、置換、Undo / Redoを確認できます。
+
+// コメントは緑色で表示します。
+NOTE: 保存はUTF-8で行います。
+TIP: Ctrl+Fで検索、Ctrl+Hで置換を開きます。
+
+=== 記法のハイライト
+
+include::chapter/overview.adoc[leveloffset=+1]
+image::system.png[システム構成]
+link:https://example.com[Example]
+xref:installation.adoc[インストール方法]
+https://example.com[URL]
+
+[source,csharp]
+----
+Console.WriteLine("Hello, SYUAS!");
+// ブロック内はコードとして表示します。
+----
+
+[cols="2*",options="header"]
+|===
+|項目 |内容
+
+|文字コード |UTF-8
+|対象OS |Windows 11
+|===
+
+////
+複数行コメント
+== この行は見出しとして強調しません
+////

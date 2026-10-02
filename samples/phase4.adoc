@@ -1,0 +1,32 @@
+= Phase 4 拡張機能の確認
+:toc:
+:imagesdir: phase4/images
+
+[[overview]]
+== 概要
+
+左の文書構造から見出しへ移動できます。右側のHTMLプレビューには保存前の編集も反映されます。
+
+=== 参照先候補
+
+「挿入 → 相互参照」で現在の見出しとIDを選択してください。
+xref:configuration[設定] に移動できます。
+
+[#configuration]
+== 設定
+
+NOTE: プレビューは文書フォルダー内の相対パスによるincludeと画像に対応します。
+
+image::diagram.svg[ソースからプレビューへの流れ]
+
+== 外部ファイルの参照
+
+include::phase4/parts/overview.adoc[tags="public",leveloffset=+1,indent=0,encoding=UTF-8,opts=optional]
+
+== コード内の見出しは除外
+
+[source,asciidoc]
+----
+== この行はアウトラインに表示しません
+[[not-an-anchor]]
+----

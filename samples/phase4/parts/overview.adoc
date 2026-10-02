@@ -1,0 +1,13 @@
+// tag::public[]
+== include先の文章
+
+この文章は外部ファイルからAsciidoctorで読み込んでいます。
+
+* tagsで領域を選択
+* leveloffsetで見出しを調整
+* 外部ファイルの変更後は「プレビューを更新」
+// end::public[]
+
+// tag::internal[]
+この領域はサンプルのプレビューに含めません。
+// end::internal[]

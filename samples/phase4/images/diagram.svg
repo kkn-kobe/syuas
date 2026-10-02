@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="110" viewBox="0 0 600 110">
+  <rect width="600" height="110" rx="12" fill="#edf2f8"/>
+  <g fill="#174a8b" font-family="Segoe UI,sans-serif" font-size="18" text-anchor="middle">
+    <text x="100" y="61">AsciiDoc Source</text>
+    <text x="300" y="61">Asciidoctor.js</text>
+    <text x="505" y="61">HTML Preview</text>
+  </g>
+  <path d="M185 55h30m-7-6 7 6-7 6M380 55h30m-7-6 7 6-7 6" fill="none" stroke="#2466bc" stroke-width="2"/>
+</svg>

@@ -1,0 +1,5 @@
+[format="csv",cols="2*"]
+|===
+A,B
+C,D
+|===

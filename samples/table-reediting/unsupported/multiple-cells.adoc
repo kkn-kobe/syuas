@@ -1,0 +1,4 @@
+[cols="2*",options="noheader"]
+|===
+|A |B
+|===
