@@ -107,10 +107,59 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var fullPath = Path.GetFullPath(path);
-            documents.Save(fullPath);
-            Remember(fullPath);
-            DocumentChanged();
-            return true;
+            var expected = SamePath(fullPath, FilePath) ? Session.Baseline : null;
+            var preserveBackup = false;
+            FileObservation? conflict = null;
+            while (true)
+            {
+                if (conflict is null)
+                {
+                    var result = documents.Save(fullPath, expected, preserveBackup);
+                    if (result.Succeeded)
+                    {
+                        Remember(fullPath);
+                        DocumentChanged();
+                        if (result.BackupPath is not null)
+                            dialogs.ShowInformation($"保存しました。置き換え前のファイルを次の場所へ退避しました。\n{result.BackupPath}");
+                        return true;
+                    }
+                    conflict = result.Conflict!;
+                }
+
+                var decision = dialogs.ResolveSaveConflict(fullPath, conflict, SamePath(fullPath, FilePath));
+                switch (decision)
+                {
+                    case SaveConflictDecision.SaveAs:
+                        var alternative = dialogs.ChooseSaveFile(fullPath);
+                        if (alternative is null) return false;
+                        fullPath = Path.GetFullPath(alternative);
+                        expected = SamePath(fullPath, FilePath) ? Session.Baseline : null;
+                        preserveBackup = false;
+                        break;
+                    case SaveConflictDecision.OverwriteWithBackup when conflict.Status == FileObservationStatus.Present:
+                        expected = conflict.Baseline!;
+                        preserveBackup = true;
+                        break;
+                    case SaveConflictDecision.Recreate when conflict.Status == FileObservationStatus.Missing:
+                        expected = null;
+                        preserveBackup = false;
+                        break;
+                    case SaveConflictDecision.Retry when conflict.Status == FileObservationStatus.Unavailable:
+                        // Retry the observation, not the approval. If it changed, require a new decision.
+                        var current = documents.Observe(fullPath);
+                        if (current.Status == FileObservationStatus.Unavailable ||
+                            (expected is null ? current.Status != FileObservationStatus.Missing :
+                                current.Status != FileObservationStatus.Present || current.Baseline!.Fingerprint != expected.Fingerprint))
+                        {
+                            conflict = current;
+                            continue;
+                        }
+                        break;
+                    default:
+                        return false;
+                }
+                conflict = null;
+            }
         }
         catch (Exception e) when (IsStorageError(e))
         {
@@ -118,6 +167,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return false;
         }
     }
+
+    private static bool SamePath(string path, string? other) => string.Equals(path, other, StringComparison.OrdinalIgnoreCase);
 
     private bool ConfirmDiscard() => !editor.IsModified || dialogs.ConfirmSave(DocumentName) switch
     {

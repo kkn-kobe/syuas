@@ -2,6 +2,9 @@ using System.IO;
 using System.Windows;
 using Microsoft.Win32;
 using Syuas.Core.Services;
+using Syuas.Core.Models;
+using Syuas.Core.ViewModels;
+using Syuas.App.Views;
 
 namespace Syuas.App.Services;
 
@@ -19,7 +22,8 @@ public sealed class WindowsDialogs(Window owner) : IUserDialogs
     {
         var dialog = new SaveFileDialog
         {
-            Filter = Filter, DefaultExt = ".adoc", AddExtension = true, OverwritePrompt = true,
+            // The application confirms the exact observed version after the picker closes.
+            Filter = Filter, DefaultExt = ".adoc", AddExtension = true, OverwritePrompt = false,
             FileName = currentPath is null ? "無題.adoc" : Path.GetFileName(currentPath),
             InitialDirectory = currentPath is null ? "" : Path.GetDirectoryName(currentPath)
         };
@@ -35,4 +39,11 @@ public sealed class WindowsDialogs(Window owner) : IUserDialogs
     };
 
     public void ShowError(string message) => MessageBox.Show(owner, message, "SYUAS", MessageBoxButton.OK, MessageBoxImage.Error);
+    public void ShowInformation(string message) => MessageBox.Show(owner, message, "SYUAS", MessageBoxButton.OK, MessageBoxImage.Information);
+
+    public SaveConflictDecision ResolveSaveConflict(string path, FileObservation observation, bool isCurrentFile)
+    {
+        var dialog = new SaveConflictDialog(new SaveConflictViewModel(path, observation, isCurrentFile)) { Owner = owner };
+        return dialog.ShowDialog() == true ? dialog.Decision : SaveConflictDecision.Cancel;
+    }
 }

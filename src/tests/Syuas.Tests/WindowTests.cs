@@ -62,6 +62,48 @@ public sealed class WindowTests
         model.Structure.IsVisible = true;
         window.Close();
 
+        foreach (var status in Enum.GetValues<FileObservationStatus>())
+        {
+            var conflict = new SaveConflictViewModel(@"C:\Documents\日本語のフォルダー\manual.adoc",
+                new(status, Error: "ファイルは別のプロセスによって使用されています。"), true);
+            var conflictDialog = new SaveConflictDialog(conflict);
+            var conflictPanel = (FrameworkElement)conflictDialog.Content;
+            conflictPanel.Measure(new Size(640, 300));
+            conflictPanel.Arrange(new Rect(0, 0, 640, 300));
+            conflictDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            conflictPanel.UpdateLayout();
+            var primary = Assert.IsType<Button>(conflictDialog.FindName("PrimaryButton"));
+            var cancel = Assert.IsType<Button>(conflictDialog.FindName("CancelButton"));
+            Assert.Equal(conflict.PrimaryLabel, primary.Content);
+            Assert.Equal(status switch
+            {
+                FileObservationStatus.Present => SaveConflictDecision.OverwriteWithBackup,
+                FileObservationStatus.Missing => SaveConflictDecision.Recreate,
+                _ => SaveConflictDecision.Retry
+            }, conflict.PrimaryDecision);
+            Assert.False(primary.IsDefault);
+            Assert.True(cancel.IsDefault);
+            Assert.True(cancel.IsCancel);
+            Assert.Same(cancel, System.Windows.Input.FocusManager.GetFocusedElement(conflictDialog));
+            Assert.Equal(SaveConflictDecision.Cancel, conflictDialog.Decision);
+            Assert.Equal(conflict.FilePath, Assert.Single(Descendants<TextBox>(conflictPanel)).Text);
+            if (Environment.GetEnvironmentVariable("SYUAS_SAVE_CONFLICT_SCREENSHOTS") is { Length: > 0 } outputFolder)
+            {
+                Directory.CreateDirectory(outputFolder);
+                var bitmap = new RenderTargetBitmap(640, 300, 96, 96, PixelFormats.Pbgra32);
+                var background = new DrawingVisual();
+                using (var drawing = background.RenderOpen())
+                    drawing.DrawRectangle(conflictDialog.Background, null, new Rect(0, 0, 640, 300));
+                bitmap.Render(background);
+                bitmap.Render(conflictPanel);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var output = File.Create(Path.Combine(outputFolder, $"{status}.png"));
+                encoder.Save(output);
+            }
+            conflictDialog.Close();
+        }
+
         // Instantiate and lay out every form without showing OS dialogs.
         foreach (var kind in new[] { AssistanceKind.Heading, AssistanceKind.Image, AssistanceKind.Include,
             AssistanceKind.Link, AssistanceKind.CrossReference, AssistanceKind.Anchor, AssistanceKind.SourceBlock, AssistanceKind.Admonition })

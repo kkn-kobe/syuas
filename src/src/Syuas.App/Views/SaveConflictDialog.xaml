@@ -1,0 +1,23 @@
+<Window x:Class="Syuas.App.Views.SaveConflictDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Width="660" Height="340" MinWidth="540" MinHeight="300"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="#F7F8FA"
+        FocusManager.FocusedElement="{Binding ElementName=CancelButton}">
+  <DockPanel Margin="20">
+    <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,18,0,0">
+      <Button Content="別名保存…" Click="OnSaveAs" Padding="12,7" Margin="0,0,8,0" />
+      <Button x:Name="PrimaryButton" Content="{Binding PrimaryLabel}" Click="OnPrimary" Padding="12,7" Margin="0,0,8,0" />
+      <Button x:Name="CancelButton" Content="キャンセル" IsCancel="True" IsDefault="True" Padding="12,7" />
+    </WrapPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+        <TextBox Text="{Binding FilePath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8"
+                 AutomationProperties.Name="保存先のパス" BorderBrush="#CDD6E2" />
+        <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,14,0,0" />
+        <TextBlock Text="キャンセルしても、編集中の内容はエディタに残ります。" TextWrapping="Wrap" Margin="0,12,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

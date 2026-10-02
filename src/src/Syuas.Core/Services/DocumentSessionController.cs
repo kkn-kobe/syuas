@@ -43,23 +43,27 @@ public sealed class DocumentSessionController : IDisposable
         finally { changingDocument = false; }
     }
 
-    public void Save(string path)
+    public FileObservation Observe(string path) => files.Observe(path);
+
+    public FileSaveResult Save(string path, FileBaseline? expected, bool preserveBackup = false)
     {
         // Synchronous for now: no user edits can interleave with saving on the UI thread.
-        var baseline = files.WriteSnapshot(path, editor.Text);
+        var result = files.WriteChecked(path, editor.Text, expected, preserveBackup);
+        if (!result.Succeeded) return result;
         changingDocument = true;
         try
         {
             editor.MarkSaved();
             SetSession(Session with
             {
-                Baseline = baseline,
+                Baseline = result.Baseline,
                 Revision = editor.ContentRevision,
                 SavedRevision = editor.ContentRevision,
                 IsModified = editor.IsModified
             });
         }
         finally { changingDocument = false; }
+        return result;
     }
 
     private void OnEditorChanged(object? sender, EventArgs e)

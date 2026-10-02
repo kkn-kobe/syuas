@@ -341,7 +341,7 @@ public sealed class EditorTests
 
         editor.Replace(0, 0, "changed");
         observed.Clear();
-        controller.Save("saved.adoc");
+        controller.Save("saved.adoc", null);
         var saved = Assert.Single(observed);
         Assert.Equal(opened.DocumentId, saved.DocumentId);
         Assert.False(saved.IsModified);
@@ -380,6 +380,9 @@ public sealed class EditorTests
             return new(Path.GetFullPath(path), FileFingerprint.FromBytes(System.Text.Encoding.UTF8.GetBytes(text)));
         }
         public FileComparison Compare(FileBaseline baseline) => throw new NotSupportedException();
+        public FileObservation Observe(string path) => new(FileObservationStatus.Missing);
+        public FileSaveResult WriteChecked(string path, string text, FileBaseline? expected, bool preserveBackup = false)
+            => new(Baseline: WriteSnapshot(path, text));
     }
 
     private sealed class FakeDialogs : IUserDialogs
@@ -391,6 +394,9 @@ public sealed class EditorTests
         public string? ChooseSaveFile(string? currentPath) => SavePath;
         public SaveDecision ConfirmSave(string documentName) => Decision;
         public void ShowError(string message) => Errors.Add(message);
+        public void ShowInformation(string message) { }
+        public SaveConflictDecision ResolveSaveConflict(string path, FileObservation observation, bool isCurrentFile)
+            => SaveConflictDecision.Cancel;
     }
 
     private sealed class FakeHistory : IRecentFilesStore

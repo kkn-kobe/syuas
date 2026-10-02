@@ -176,6 +176,60 @@ public sealed class FileAndSearchTests : IDisposable
     }
 
     [Fact]
+    public void CheckedWriteNeverOverwritesAnUnexpectedExistingDestination()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "appeared.adoc");
+        File.WriteAllText(path, "existing");
+        var result = files.WriteChecked(path, "draft", null);
+        Assert.False(result.Succeeded);
+        Assert.Equal(FileObservationStatus.Present, result.Conflict!.Status);
+        Assert.Equal("existing", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Fact]
+    public void CheckedWriteRejectsABaselineForAnotherPath()
+    {
+        var files = new Utf8FileService();
+        var first = Path.Combine(directory, "first.adoc");
+        var second = Path.Combine(directory, "second.adoc");
+        var baseline = files.WriteSnapshot(first, "original");
+        File.WriteAllText(second, "another");
+        Assert.Throws<ArgumentException>(() => files.WriteChecked(second, "draft", baseline));
+        Assert.Equal("another", File.ReadAllText(second));
+    }
+
+    [Fact]
+    public void CheckedWriteEncodingFailurePreservesDestination()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "encoding.adoc");
+        var baseline = files.WriteSnapshot(path, "original");
+        Assert.Throws<EncoderFallbackException>(() => files.WriteChecked(path, "\ud800", baseline, true));
+        Assert.Equal("original", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Fact]
+    public void ReadOnlyDestinationFailureDoesNotFallBackToDestructiveWriting()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "readonly.adoc");
+        var baseline = files.WriteSnapshot(path, "original");
+        var attributes = File.GetAttributes(path);
+        File.SetAttributes(path, attributes | FileAttributes.ReadOnly);
+        try
+        {
+            var error = Record.Exception(() => files.WriteChecked(path, "draft", baseline, true));
+            Assert.True(error is IOException or UnauthorizedAccessException);
+            Assert.Equal("original", File.ReadAllText(path));
+            Assert.Empty(Directory.GetFiles(directory, "*.tmp"));
+        }
+        finally { File.SetAttributes(path, attributes); }
+    }
+
+    [Fact]
     public void HistoryPersistsAndDeduplicates()
     {
         var store = new RecentFilesStore(Path.Combine(directory, "settings", "recent.json"));
