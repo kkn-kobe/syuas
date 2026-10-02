@@ -3,6 +3,7 @@ using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
 using Syuas.App.Adapters;
 using Syuas.App.Highlighting;
+using Syuas.Core.Models;
 using Syuas.Core.Services;
 using Syuas.Core.ViewModels;
 
@@ -171,6 +172,189 @@ public sealed class EditorTests
         for (var i = 0; i < names.Length; i++) Assert.Equal(names[i], highlighter.HighlightLine(i + 7).Sections[0].Color.Name);
     });
 
+    [Fact]
+    public void ContentRevisionIgnoresSelectionAndSaveMarkersButTracksUndoRedo() => Sta.Run(() =>
+    {
+        using var editor = new AvalonEditAdapter(new TextEditor());
+        var notifications = 0;
+        editor.ContentChanged += (_, _) => notifications++;
+        editor.Load("text");
+        var loadedRevision = editor.ContentRevision;
+        var loadedNotifications = notifications;
+        editor.Select(1, 2);
+        editor.MarkSaved();
+        Assert.Equal(loadedRevision, editor.ContentRevision);
+        Assert.Equal(loadedNotifications, notifications);
+
+        editor.Replace(0, 0, "new ");
+        var editedRevision = editor.ContentRevision;
+        Assert.True(editedRevision > loadedRevision);
+        editor.Undo();
+        Assert.True(editor.ContentRevision > editedRevision);
+        Assert.False(editor.IsModified);
+        var undoneRevision = editor.ContentRevision;
+        editor.Redo();
+        Assert.True(editor.ContentRevision > undoneRevision);
+        Assert.True(editor.IsModified);
+        Assert.Equal(loadedNotifications + 3, notifications);
+    });
+
+    [Fact]
+    public void NewAndOpenCreateSessionsWhileSaveAsPreservesIdentity() => Sta.Run(() =>
+    {
+        using var fixture = new Fixture();
+        var initial = fixture.Model.Session;
+        Assert.NotEqual(Guid.Empty, initial.DocumentId);
+        Assert.Null(initial.Baseline);
+        Assert.Null(initial.SavedRevision);
+        fixture.Editor.Replace(0, 0, "draft");
+        Assert.True(fixture.Model.Save());
+        var saved = fixture.Model.Session;
+        Assert.Equal(initial.DocumentId, saved.DocumentId);
+        Assert.Equal(saved.Revision, saved.SavedRevision);
+        Assert.NotNull(saved.Baseline);
+        Assert.False(saved.IsModified);
+
+        fixture.Dialogs.SavePath = Path.GetFullPath("renamed.adoc");
+        Assert.True(fixture.Model.Save(true));
+        Assert.Equal(saved.DocumentId, fixture.Model.Session.DocumentId);
+        Assert.Equal(saved.Revision, fixture.Model.Session.Revision);
+        Assert.Equal(fixture.Dialogs.SavePath, fixture.Model.Session.FilePath);
+
+        Assert.True(fixture.Model.New());
+        var fresh = fixture.Model.Session;
+        Assert.NotEqual(saved.DocumentId, fresh.DocumentId);
+        Assert.Null(fresh.Baseline);
+        Assert.Null(fresh.SavedRevision);
+        Assert.False(fresh.IsModified);
+
+        Assert.True(fixture.Model.Open("opened.adoc"));
+        var opened = fixture.Model.Session;
+        Assert.NotEqual(fresh.DocumentId, opened.DocumentId);
+        Assert.Equal(opened.Revision, opened.SavedRevision);
+        Assert.Equal(FileFingerprint.FromBytes("loaded"u8), opened.Baseline!.Fingerprint);
+        Assert.True(fixture.Model.Open("opened.adoc"));
+        Assert.NotEqual(opened.DocumentId, fixture.Model.Session.DocumentId);
+    });
+
+    [Fact]
+    public void SessionKeepsDiskBaselineAcrossEditsUndoAndRedo() => Sta.Run(() =>
+    {
+        using var fixture = new Fixture();
+        fixture.Model.Open("file.adoc");
+        var opened = fixture.Model.Session;
+        fixture.Editor.Replace(0, 0, "draft");
+        var edited = fixture.Model.Session;
+        Assert.Equal(opened.DocumentId, edited.DocumentId);
+        Assert.Same(opened.Baseline, edited.Baseline);
+        Assert.Equal(opened.SavedRevision, edited.SavedRevision);
+        Assert.True(edited.IsModified);
+        Assert.True(edited.Revision > opened.Revision);
+
+        fixture.Editor.Undo();
+        Assert.False(fixture.Model.Session.IsModified);
+        Assert.True(fixture.Model.Session.Revision > edited.Revision);
+        Assert.Equal(opened.SavedRevision, fixture.Model.Session.SavedRevision);
+        fixture.Editor.Redo();
+        Assert.True(fixture.Model.Session.IsModified);
+
+        Assert.True(fixture.Model.Save());
+        var saved = fixture.Model.Session;
+        Assert.Equal(FileFingerprint.FromBytes("draftloaded"u8), saved.Baseline!.Fingerprint);
+        fixture.Editor.Undo();
+        Assert.True(fixture.Model.Session.IsModified);
+        Assert.Same(saved.Baseline, fixture.Model.Session.Baseline);
+        fixture.Editor.Redo();
+        Assert.False(fixture.Model.Session.IsModified);
+    });
+
+    [Fact]
+    public void FailedReadAfterDiscardKeepsTheEntireSession() => Sta.Run(() =>
+    {
+        using var fixture = new Fixture();
+        fixture.Model.Open("original.adoc");
+        fixture.Editor.Replace(0, 0, "draft");
+        var session = fixture.Model.Session;
+        fixture.Dialogs.Decision = SaveDecision.Discard;
+        fixture.Files.FailRead = true;
+        Assert.False(fixture.Model.Open("missing.adoc"));
+        Assert.Same(session, fixture.Model.Session);
+        Assert.True(fixture.Editor.CanUndo);
+    });
+
+    [Fact]
+    public void FailedAndCancelledSaveAsLeaveSessionUnchanged() => Sta.Run(() =>
+    {
+        using var fixture = new Fixture();
+        fixture.Model.Open("original.adoc");
+        fixture.Editor.Replace(0, 0, "draft");
+        var session = fixture.Model.Session;
+        fixture.Files.FailWrite = true;
+        Assert.False(fixture.Model.Save(true));
+        Assert.Same(session, fixture.Model.Session);
+        fixture.Dialogs.SavePath = null;
+        Assert.False(fixture.Model.Save(true));
+        Assert.Same(session, fixture.Model.Session);
+        fixture.Dialogs.Decision = SaveDecision.Cancel;
+        Assert.False(fixture.Model.New());
+        Assert.False(fixture.Model.CanClose());
+        Assert.Same(session, fixture.Model.Session);
+    });
+
+    [Fact]
+    public void SessionNotificationIgnoresCaretMovementAndStopsAfterDisposal() => Sta.Run(() =>
+    {
+        using var editor = new AvalonEditAdapter(new TextEditor());
+        using var controller = new DocumentSessionController(editor, new FakeFiles());
+        controller.Open("test.adoc");
+        var notifications = 0;
+        controller.SessionChanged += (_, _) => notifications++;
+        editor.Select(1, 2);
+        Assert.Equal(0, notifications);
+        editor.Replace(0, 0, "new");
+        Assert.True(notifications > 0);
+        var session = controller.Session;
+        controller.Dispose();
+        notifications = 0;
+        editor.Undo();
+        Assert.Equal(0, notifications);
+        Assert.Same(session, controller.Session);
+    });
+
+    [Fact]
+    public void DocumentTransitionsPublishOnlyTheCompletedSession() => Sta.Run(() =>
+    {
+        using var editor = new AvalonEditAdapter(new TextEditor());
+        using var controller = new DocumentSessionController(editor, new FakeFiles());
+        editor.Replace(0, 0, "draft");
+        var draftId = controller.Session.DocumentId;
+        var observed = new List<DocumentSession>();
+        controller.SessionChanged += (_, _) => observed.Add(controller.Session);
+
+        controller.Open("opened.adoc");
+        var opened = Assert.Single(observed);
+        Assert.NotEqual(draftId, opened.DocumentId);
+        Assert.False(opened.IsModified);
+        Assert.Equal(editor.ContentRevision, opened.Revision);
+        Assert.Equal(opened.Revision, opened.SavedRevision);
+        Assert.NotNull(opened.Baseline);
+
+        editor.Replace(0, 0, "changed");
+        observed.Clear();
+        controller.Save("saved.adoc");
+        var saved = Assert.Single(observed);
+        Assert.Equal(opened.DocumentId, saved.DocumentId);
+        Assert.False(saved.IsModified);
+        Assert.Equal(Path.GetFullPath("saved.adoc"), saved.FilePath);
+
+        observed.Clear();
+        controller.New();
+        var fresh = Assert.Single(observed);
+        Assert.NotEqual(saved.DocumentId, fresh.DocumentId);
+        Assert.False(fresh.IsModified);
+        Assert.Null(fresh.Baseline);
+    });
+
     private sealed class Fixture : IDisposable
     {
         public AvalonEditAdapter Editor { get; } = new(new TextEditor());
@@ -187,12 +371,15 @@ public sealed class EditorTests
         public bool FailRead { get; set; }
         public bool FailWrite { get; set; }
         public string? SavedText { get; private set; }
-        public string Read(string path) => FailRead ? throw new IOException("Read failed") : "loaded";
-        public void Write(string path, string text)
+        public FileSnapshot ReadSnapshot(string path) => FailRead ? throw new IOException("Read failed")
+            : new("loaded", new(Path.GetFullPath(path), FileFingerprint.FromBytes("loaded"u8)));
+        public FileBaseline WriteSnapshot(string path, string text)
         {
             if (FailWrite) throw new IOException("Write failed");
             SavedText = text;
+            return new(Path.GetFullPath(path), FileFingerprint.FromBytes(System.Text.Encoding.UTF8.GetBytes(text)));
         }
+        public FileComparison Compare(FileBaseline baseline) => throw new NotSupportedException();
     }
 
     private sealed class FakeDialogs : IUserDialogs

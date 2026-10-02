@@ -12,7 +12,7 @@ public sealed class AvalonEditAdapter : IEditorAdapter, IDisposable
     public AvalonEditAdapter(TextEditor editor)
     {
         this.editor = editor;
-        editor.TextChanged += OnStateChanged;
+        editor.TextChanged += OnContentChanged;
         editor.TextArea.Caret.PositionChanged += OnStateChanged;
         editor.TextArea.SelectionChanged += OnStateChanged;
         editor.Document.UndoStack.PropertyChanged += OnUndoChanged;
@@ -20,6 +20,8 @@ public sealed class AvalonEditAdapter : IEditorAdapter, IDisposable
     }
 
     public event EventHandler? StateChanged;
+    public event EventHandler? ContentChanged;
+    public long ContentRevision { get; private set; }
     public string Text => editor.Text;
     public bool IsModified => !editor.Document.UndoStack.IsOriginalFile;
     public bool CanUndo => editor.CanUndo;
@@ -54,12 +56,18 @@ public sealed class AvalonEditAdapter : IEditorAdapter, IDisposable
     public IDisposable BeginUpdate() => editor.Document.RunUpdate();
     public void Undo() => editor.Undo();
     public void Redo() => editor.Redo();
+    private void OnContentChanged(object? sender, EventArgs e)
+    {
+        ContentRevision++;
+        ContentChanged?.Invoke(this, EventArgs.Empty);
+        OnStateChanged(sender, e);
+    }
     private void OnStateChanged(object? sender, EventArgs e) => StateChanged?.Invoke(this, EventArgs.Empty);
     private void OnUndoChanged(object? sender, PropertyChangedEventArgs e) => OnStateChanged(sender, e);
 
     public void Dispose()
     {
-        editor.TextChanged -= OnStateChanged;
+        editor.TextChanged -= OnContentChanged;
         editor.TextArea.Caret.PositionChanged -= OnStateChanged;
         editor.TextArea.SelectionChanged -= OnStateChanged;
         editor.Document.UndoStack.PropertyChanged -= OnUndoChanged;

@@ -1,4 +1,6 @@
 using System.Text;
+using System.Security.Cryptography;
+using Syuas.Core.Models;
 using Syuas.Core.Services;
 
 namespace Syuas.Tests;
@@ -47,6 +49,130 @@ public sealed class FileAndSearchTests : IDisposable
         Assert.Throws<EncoderFallbackException>(() => new Utf8FileService().Write(path, "\ud800"));
         Assert.Equal("original", File.ReadAllText(path));
         Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Theory]
+    [InlineData("日本語\r\n", true)]
+    [InlineData("日本語\n", false)]
+    [InlineData("", true)]
+    [InlineData("", false)]
+    public void SnapshotTextAndHashDescribeTheOriginalBytes(string text, bool bom)
+    {
+        var path = Path.Combine(directory, "snapshot.adoc");
+        File.WriteAllText(path, text, new UTF8Encoding(bom));
+        var bytes = File.ReadAllBytes(path);
+        var snapshot = new Utf8FileService().ReadSnapshot(path);
+        File.WriteAllText(path, "later external change");
+
+        Assert.Equal(text, snapshot.Text);
+        Assert.Equal(Path.GetFullPath(path), snapshot.Baseline.FullPath);
+        Assert.Equal(bytes.Length, snapshot.Baseline.Fingerprint.ByteLength);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)), snapshot.Baseline.Fingerprint.Sha256);
+    }
+
+    [Fact]
+    public void ComparisonDetectsChangesWithIdenticalLengthAndTimestamp()
+    {
+        var path = Path.Combine(directory, "same-metadata.adoc");
+        var files = new Utf8FileService();
+        var baseline = files.WriteSnapshot(path, "first");
+        var timestamp = File.GetLastWriteTimeUtc(path);
+        File.WriteAllText(path, "other");
+        File.SetLastWriteTimeUtc(path, timestamp);
+
+        var comparison = files.Compare(baseline);
+        Assert.Equal(FileComparisonStatus.Modified, comparison.Status);
+        Assert.Equal(baseline.Fingerprint.ByteLength, comparison.Current!.Fingerprint.ByteLength);
+        Assert.NotEqual(baseline.Fingerprint.Sha256, comparison.Current.Fingerprint.Sha256);
+        Assert.Equal(timestamp, File.GetLastWriteTimeUtc(path));
+    }
+
+    [Fact]
+    public void TimestampChangeAloneIsNotAContentChange()
+    {
+        var path = Path.Combine(directory, "timestamp.adoc");
+        var files = new Utf8FileService();
+        var baseline = files.WriteSnapshot(path, "same");
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-1));
+        Assert.Equal(FileComparisonStatus.Unchanged, files.Compare(baseline).Status);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ComparisonIncludesBomAndNewlineChanges(bool changeBom)
+    {
+        var path = Path.Combine(directory, "format.adoc");
+        var files = new Utf8FileService();
+        var baseline = files.WriteSnapshot(path, "line\n");
+        File.WriteAllText(path, changeBom ? "line\n" : "line\r\n", new UTF8Encoding(changeBom));
+        Assert.Equal(FileComparisonStatus.Modified, files.Compare(baseline).Status);
+    }
+
+    [Fact]
+    public void InvalidExternalUtf8IsAChangeButCannotBeOpened()
+    {
+        var path = Path.Combine(directory, "invalid-external.adoc");
+        var files = new Utf8FileService();
+        var baseline = files.WriteSnapshot(path, "valid");
+        File.WriteAllBytes(path, [0xff]);
+        Assert.Equal(FileComparisonStatus.Modified, files.Compare(baseline).Status);
+        Assert.Throws<DecoderFallbackException>(() => files.ReadSnapshot(path));
+    }
+
+    [Fact]
+    public void ComparisonDistinguishesMissingFileAndMissingParent()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "deleted.adoc");
+        var baseline = files.WriteSnapshot(path, "text");
+        File.Delete(path);
+        Assert.Equal(FileComparisonStatus.Missing, files.Compare(baseline).Status);
+        var missingParent = baseline with { FullPath = Path.Combine(directory, "missing", "file.adoc") };
+        Assert.Equal(FileComparisonStatus.Missing, files.Compare(missingParent).Status);
+    }
+
+    [Fact]
+    public void LockedFileIsUnavailableAndCanBeComparedAfterUnlocking()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "locked.adoc");
+        var baseline = files.WriteSnapshot(path, "text");
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var result = files.Compare(baseline);
+            Assert.Equal(FileComparisonStatus.Unavailable, result.Status);
+            Assert.NotEmpty(result.Error!);
+            Assert.Null(result.Current);
+            Assert.Throws<IOException>(() => files.ReadSnapshot(path));
+            Assert.Throws<IOException>(() => files.WriteSnapshot(path, "new text"));
+        }
+        Assert.Equal(FileComparisonStatus.Unchanged, files.Compare(baseline).Status);
+        Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Fact]
+    public void DirectoryInPlaceOfFileIsUnavailableNotMissing()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "replaced.adoc");
+        var baseline = files.WriteSnapshot(path, "text");
+        File.Delete(path);
+        Directory.CreateDirectory(path);
+        Assert.Equal(FileComparisonStatus.Unavailable, files.Compare(baseline).Status);
+    }
+
+    [Fact]
+    public void SaveBaselineDescribesCommittedBomlessBytesAndDetectsSubsequentEdits()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "saved.adoc");
+        File.WriteAllText(path, "old", new UTF8Encoding(true));
+        var baseline = files.WriteSnapshot(path, "本文\r\n");
+        Assert.Equal(FileFingerprint.FromBytes(File.ReadAllBytes(path)), baseline.Fingerprint);
+        Assert.Equal(FileComparisonStatus.Unchanged, files.Compare(baseline).Status);
+        File.WriteAllText(path, "external");
+        Assert.Equal(FileComparisonStatus.Modified, files.Compare(baseline).Status);
     }
 
     [Fact]

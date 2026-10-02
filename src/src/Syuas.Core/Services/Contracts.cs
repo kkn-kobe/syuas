@@ -1,3 +1,5 @@
+using Syuas.Core.Models;
+
 namespace Syuas.Core.Services;
 
 public enum SaveDecision { Save, Discard, Cancel }
@@ -12,8 +14,9 @@ public interface IUserDialogs
 
 public interface IFileService
 {
-    string Read(string path);
-    void Write(string path, string text);
+    FileSnapshot ReadSnapshot(string path);
+    FileBaseline WriteSnapshot(string path, string text);
+    FileComparison Compare(FileBaseline baseline);
 }
 
 public interface IRecentFilesStore

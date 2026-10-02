@@ -4,6 +4,8 @@ namespace Syuas.Core.Editor;
 public interface IEditorAdapter
 {
     event EventHandler? StateChanged;
+    event EventHandler? ContentChanged;
+    long ContentRevision { get; }
     string Text { get; }
     bool IsModified { get; }
     bool CanUndo { get; }

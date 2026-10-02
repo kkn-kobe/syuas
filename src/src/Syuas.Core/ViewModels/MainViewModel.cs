@@ -1,9 +1,9 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
 using Syuas.Core.Editor;
+using Syuas.Core.Models;
 using Syuas.Core.Services;
 
 namespace Syuas.Core.ViewModels;
@@ -11,10 +11,9 @@ namespace Syuas.Core.ViewModels;
 public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IEditorAdapter editor;
-    private readonly IFileService files;
+    private readonly DocumentSessionController documents;
     private readonly IUserDialogs dialogs;
     private readonly IRecentFilesStore recentStore;
-    private string? filePath;
     private string searchText = "";
     private string replacementText = "";
     private string searchStatus = "";
@@ -25,7 +24,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
     {
         this.editor = editor;
-        this.files = files;
+        documents = new(editor, files);
+        documents.SessionChanged += OnSessionChanged;
         this.dialogs = dialogs;
         this.recentStore = recentStore;
         Structure = new(editor);
@@ -59,8 +59,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand FindNextCommand { get; }
     public RelayCommand ReplaceCommand { get; }
     public RelayCommand ReplaceAllCommand { get; }
-    public string? FilePath => filePath;
-    public string DocumentName => filePath is null ? "無題" : Path.GetFileName(filePath);
+    public DocumentSession Session => documents.Session;
+    public string? FilePath => Session.FilePath;
+    public string DocumentName => FilePath is null ? "無題" : Path.GetFileName(FilePath);
     public string Title => $"{(editor.IsModified ? "* " : "")}{DocumentName} — SYUAS";
     public string Position => $"Ln {editor.Line}, Col {editor.Column}";
     public string DocumentStatus => editor.IsModified ? "未保存の変更" : "保存済み";
@@ -76,8 +77,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool New()
     {
         if (!ConfirmDiscard()) return false;
-        filePath = null;
-        editor.Load("");
+        documents.New();
         DocumentChanged();
         return true;
     }
@@ -88,9 +88,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var fullPath = Path.GetFullPath(path);
-            var text = files.Read(fullPath);
-            filePath = fullPath;
-            editor.Load(text);
+            documents.Open(fullPath);
             Remember(fullPath);
             DocumentChanged();
             return true;
@@ -104,14 +102,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool Save(bool saveAs = false)
     {
-        var path = saveAs || filePath is null ? dialogs.ChooseSaveFile(filePath) : filePath;
+        var path = saveAs || FilePath is null ? dialogs.ChooseSaveFile(FilePath) : FilePath;
         if (path is null) return false;
         try
         {
             var fullPath = Path.GetFullPath(path);
-            files.Write(fullPath, editor.Text);
-            filePath = fullPath;
-            editor.MarkSaved();
+            documents.Save(fullPath);
             Remember(fullPath);
             DocumentChanged();
             return true;
@@ -175,6 +171,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         UndoCommand.Refresh(); RedoCommand.Refresh();
     }
 
+    private void OnSessionChanged(object? sender, EventArgs e) => Changed(nameof(Session));
+
     private void DocumentChanged()
     {
         Changed(nameof(FilePath)); Changed(nameof(DocumentName)); Changed(nameof(Title));
@@ -184,5 +182,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void RefreshSearch() { FindNextCommand.Refresh(); ReplaceCommand.Refresh(); ReplaceAllCommand.Refresh(); }
     private static bool IsStorageError(Exception e) => e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
-    public void Dispose() => editor.StateChanged -= EditorStateChanged;
+    public void Dispose()
+    {
+        editor.StateChanged -= EditorStateChanged;
+        documents.SessionChanged -= OnSessionChanged;
+        documents.Dispose();
+    }
 }
