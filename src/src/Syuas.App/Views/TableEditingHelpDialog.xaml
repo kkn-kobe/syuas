@@ -7,7 +7,7 @@
   <DockPanel Margin="22">
     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
       <TextBlock Text="表の再編集の使い方" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
-      <TextBlock Text="操作方法、対応する表、保存と復元の扱いを確認できます。" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#536579" />
+      <TextBlock Text="表の作成・再編集、元に戻す操作、保存と復元の扱いを確認できます。" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#536579" />
     </StackPanel>
     <Button DockPanel.Dock="Bottom" Content="閉じる" HorizontalAlignment="Right" Padding="20,7" Margin="0,16,0,0"
             IsDefault="True" IsCancel="True" Click="OnClose" />

@@ -30,7 +30,20 @@ public sealed class TableCompatibilityTests
         Assert.False(f.Editor.IsModified);
         Assert.False(f.Editor.CanUndo);
         Assert.Equal(source, f.Editor.Text);
-        f.Edit(model => { model.Cells[0].Text += " 更新"; model.ConfirmCommand.Execute(null); });
+        f.Edit(model =>
+        {
+            Assert.False(model.CanUndo); Assert.False(model.CanRedo);
+            var original = model.Cells[0].Text;
+            model.BeginTextEdit(new(new(TableInputKind.Cell), original.Length, 0));
+            model.Cells[0].Text += " 更"; model.Cells[0].Text += "新";
+            model.AddRowCommand.Execute(null);
+            model.UndoCommand.Execute(null); // Discard the extra row, retain grouped input.
+            model.UndoCommand.Execute(null);
+            Assert.Equal(original, model.Cells[0].Text);
+            model.RedoCommand.Execute(null);
+            Assert.Equal(1, model.UndoCount); Assert.Equal(1, model.RedoCount);
+            model.ConfirmCommand.Execute(null);
+        });
         var updated = f.Editor.Text;
         Assert.StartsWith(prefix, updated);
         Assert.EndsWith(suffix, updated);
@@ -48,6 +61,7 @@ public sealed class TableCompatibilityTests
         Assert.True(f.Model.Open(f.Path));
         f.Edit(model =>
         {
+            Assert.False(model.CanUndo); Assert.False(model.CanRedo);
             Assert.Equal(example.Rows, model.Definition.RowCount);
             Assert.Equal(example.Columns, model.Definition.ColumnCount);
             Assert.Equal(example.Header, model.HasHeader);
@@ -88,7 +102,14 @@ public sealed class TableCompatibilityTests
         using var f = new Fixture(TableCompatibilityFixtures.Read("header"));
         var baseline = f.Model.Session.Baseline;
         var documentId = f.Model.Session.DocumentId;
-        f.Edit(model => { model.Cells[3].Text = "復元する表"; model.ConfirmCommand.Execute(null); });
+        f.Edit(model =>
+        {
+            model.Cells[3].Text = "復元する表";
+            model.DeleteRowCommand.Execute(null);
+            model.UndoCommand.Execute(null);
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
+            model.ConfirmCommand.Execute(null);
+        });
         var draft = f.Editor.Text;
         f.Clock.Advance(5);
         await f.Model.TickRecoveryAsync();
@@ -103,9 +124,13 @@ public sealed class TableCompatibilityTests
         Assert.False(f.Editor.CanUndo);
         f.Edit(model =>
         {
+            Assert.False(model.CanUndo); Assert.False(model.CanRedo);
             Assert.Equal("復元する表", model.Cells[3].Text);
             Assert.Equal(2, model.Cells[3].RowSpan);
             model.Cells[3].Text = "復元後に再編集";
+            model.UndoCommand.Execute(null);
+            Assert.Equal("復元する表", model.Cells[3].Text);
+            model.RedoCommand.Execute(null);
             model.ConfirmCommand.Execute(null);
         });
         f.Editor.Undo();
@@ -141,6 +166,9 @@ public sealed class TableCompatibilityTests
         f.Edit(model =>
         {
             model.Cells[0].Text = "未適用の内容";
+            model.SelectCell(0, 0); model.SelectCell(1, 1, true);
+            model.MergeCommand.Execute(null);
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
             Assert.True(f.Model.IsTableEditing);
             backup = f.Model.TickRecoveryAsync(); // Capture while the designer is still open.
         });
@@ -166,9 +194,16 @@ public sealed class TableCompatibilityTests
         {
             File.WriteAllText(f.Path, external);
             model.Cells[0].Text = "ローカルで再編集";
+            model.AddColumnCommand.Execute(null);
+            model.UndoCommand.Execute(null);
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
             model.ConfirmCommand.Execute(null);
         });
         var local = f.Editor.Text;
+        f.Editor.Undo();
+        Assert.Equal(TableCompatibilityFixtures.Read("spans"), f.Editor.Text);
+        f.Editor.Redo();
+        Assert.Equal(local, f.Editor.Text);
         Assert.Equal(baseline, f.Model.Session.Baseline);
         await f.Model.CheckExternalChangesAsync(true);
         Assert.True(f.Model.IsExternalChangeVisible);
@@ -196,6 +231,115 @@ public sealed class TableCompatibilityTests
         }
         Assert.False(f.Editor.IsModified);
         Assert.False(f.Model.HasExternalChange);
+    });
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CancelOrUndoToOriginalPreservesDocumentRedoBaselineAndRecovery(bool dirty, bool confirm) => Sta.RunAsync(async () =>
+    {
+        var original = TableCompatibilityFixtures.Read("basic");
+        using var f = new Fixture(original);
+        if (dirty) f.Editor.Replace(f.Editor.Text.Length, 0, "\n退避する本文\n");
+        var expected = f.Editor.Text;
+        f.Editor.Replace(f.Editor.Text.Length, 0, "やり直しで戻す本文");
+        f.Editor.Undo();
+        var revision = f.Editor.ContentRevision;
+        var baseline = f.Model.Session.Baseline;
+        var documentId = f.Model.Session.DocumentId;
+        f.Edit(model =>
+        {
+            var selection = (f.Editor.SelectionStart, f.Editor.SelectionLength);
+            model.Title = "未適用のタイトル";
+            model.DeleteColumnCommand.Execute(null);
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
+            if (confirm)
+            {
+                while (model.CanUndo) model.UndoCommand.Execute(null);
+                model.ConfirmCommand.Execute(null);
+            }
+            Assert.Equal(selection, (f.Editor.SelectionStart, f.Editor.SelectionLength));
+        });
+        Assert.Equal(expected, f.Editor.Text);
+        Assert.Equal(revision, f.Editor.ContentRevision);
+        Assert.Equal(baseline, f.Model.Session.Baseline);
+        Assert.Equal(documentId, f.Model.Session.DocumentId);
+        Assert.Equal(dirty, f.Editor.IsModified);
+        Assert.True(f.Editor.CanRedo);
+        f.Clock.Advance(5); await f.Model.TickRecoveryAsync();
+        f.Edit(model => { Assert.False(model.CanUndo); Assert.False(model.CanRedo); Assert.Empty(model.Title); });
+        f.Editor.Redo();
+        Assert.Equal(expected + "やり直しで戻す本文", f.Editor.Text);
+        Assert.Equal(original, File.ReadAllText(f.Path));
+        f.Restart(); // Recovery candidates exclude the session that is still running.
+        var candidates = await f.Model.ListRecoveryAsync();
+        if (dirty) Assert.Equal(expected, Assert.Single(candidates).Snapshot!.Text);
+        else Assert.Empty(candidates);
+    });
+
+    [Theory]
+    [InlineData("applied")]
+    [InlineData("undo")]
+    [InlineData("redo")]
+    public void DocumentUndoToSavedTableRemovesRecoveryAndRedoCreatesOnlyAppliedCopy(string state) => Sta.RunAsync(async () =>
+    {
+        using var f = new Fixture(TableCompatibilityFixtures.Read("basic"));
+        f.Edit(model =>
+        {
+            model.Title = "適用した表";
+            model.DeleteRowCommand.Execute(null);
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
+            model.ConfirmCommand.Execute(null);
+        });
+        var applied = f.Editor.Text;
+        f.Clock.Advance(5); await f.Model.TickRecoveryAsync();
+        if (state != "applied")
+        {
+            f.Editor.Undo();
+            Assert.False(f.Editor.IsModified);
+            await f.Recovery.DrainAsync();
+        }
+        if (state == "redo")
+        {
+            f.Editor.Redo();
+            f.Clock.Advance(5); await f.Model.TickRecoveryAsync();
+        }
+        f.Restart();
+        var candidates = await f.Model.ListRecoveryAsync();
+        if (state == "undo") Assert.Empty(candidates);
+        else Assert.Equal(applied, Assert.Single(candidates).Snapshot!.Text);
+    });
+
+    [Fact]
+    public void CancelledDesignerHistoryDoesNotAcknowledgeExternalChanges() => Sta.RunAsync(async () =>
+    {
+        using var f = new Fixture(TableCompatibilityFixtures.Read("basic"));
+        f.Editor.Replace(f.Editor.Text.Length, 0, "\nローカルの本文\n");
+        var local = f.Editor.Text;
+        var baseline = f.Model.Session.Baseline;
+        Task? detection = null;
+        f.Edit(model =>
+        {
+            File.WriteAllText(f.Path, "外部の文書");
+            model.Title = "未適用";
+            model.UndoCommand.Execute(null); model.RedoCommand.Execute(null);
+            detection = f.Model.CheckExternalChangesAsync(true);
+            Assert.False(f.Model.Save());
+            Assert.False(f.Model.ReloadFromDisk());
+        });
+        await detection!;
+        Assert.True(f.Model.HasExternalChange);
+        Assert.Equal(baseline, f.Model.Session.Baseline);
+        Assert.Equal(local, f.Editor.Text);
+        f.Model.DismissExternalChangeCommand.Execute(null);
+        Assert.False(f.Model.Save());
+        Assert.Single(f.Dialogs.Conflicts);
+        Assert.Equal("外部の文書", File.ReadAllText(f.Path));
+        f.Clock.Advance(5); await f.Model.TickRecoveryAsync();
+        f.Restart();
+        Assert.Equal(local, Assert.Single(await f.Model.ListRecoveryAsync()).Snapshot!.Text);
     });
 
     private sealed class Fixture : IDisposable

@@ -42,6 +42,7 @@ public partial class TableDesignerDialog : Window
         BuildGrid();
     }
     private void OnInsert(object? sender, EventArgs e) => DialogResult = true;
+    private void OnHelp(object sender, RoutedEventArgs e) => new TableEditingHelpDialog { Owner = this }.ShowDialog();
     private void OnStructureChanged(object? sender, EventArgs e) => BuildGrid();
 
     private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
