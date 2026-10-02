@@ -206,14 +206,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             if (disposed) return false;
             var index = documents.IndexOf(document);
+            // Keep WPF's selection on a surviving item before removing the focused tab.
+            // Otherwise the TwoWay binding can retain the removed item with SelectedIndex == -1.
+            if (documents.Count == 1) Add(Create());
+            activeDocument = selected != document ? selected
+                : documents[index + 1 < documents.Count ? index + 1 : index - 1];
+            Changed(nameof(ActiveDocument));
             document.PropertyChanged -= OnDocumentChanged;
             trackedIds.Remove(document);
             documents.Remove(document);
             document.Dispose();
-            if (documents.Count == 0) Add(Create());
             RefreshNames();
-            // Selection must be updated while mutation is still protected from re-entry.
-            activeDocument = documents.Contains(selected) ? selected : documents[Math.Min(index, documents.Count - 1)];
         }
         finally { SetBusy(false); }
         ActiveDocument.SearchText = searchText;

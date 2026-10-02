@@ -120,6 +120,7 @@ public sealed class WindowTests
         VerifyTabReordering(window, model, tabs, content);
         window.Close();
         StartupFileChecks.Run();
+        TabCloseChecks.Run();
 
         var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
             "== 操作手順\n\nSYUASで追記した説明です。\n\n* ローカルの変更\n",
