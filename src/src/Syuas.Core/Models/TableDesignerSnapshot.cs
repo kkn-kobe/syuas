@@ -6,7 +6,7 @@ namespace Syuas.Core.Models;
 public sealed class TableDesignerSnapshot
 {
     private TableDesignerSnapshot(TableSnapshot table, TableSelection selection, int anchorRow,
-        int anchorColumn, string rowsInput, string columnsInput)
+        int anchorColumn, string rowsInput, string columnsInput, TableInputFocus? inputFocus)
     {
         Table = table;
         Selection = selection;
@@ -14,6 +14,7 @@ public sealed class TableDesignerSnapshot
         AnchorColumn = anchorColumn;
         RowsInput = rowsInput;
         ColumnsInput = columnsInput;
+        InputFocus = inputFocus;
     }
 
     public TableSnapshot Table { get; }
@@ -22,13 +23,17 @@ public sealed class TableDesignerSnapshot
     public int AnchorColumn { get; }
     public string RowsInput { get; }
     public string ColumnsInput { get; }
-    public long EstimatedBytes => 64L + Table.EstimatedBytes
+    public TableInputFocus? InputFocus { get; }
+    public long EstimatedBytes => 128L + Table.EstimatedBytes
         + TableSnapshot.StringBytes(RowsInput) + TableSnapshot.StringBytes(ColumnsInput);
 
     public static TableDesignerSnapshot Capture(TableDefinition table, TableSelection selection,
-        int anchorRow, int anchorColumn, string? rowsInput = null, string? columnsInput = null)
+        int anchorRow, int anchorColumn, string? rowsInput = null, string? columnsInput = null,
+        TableInputFocus? inputFocus = null)
     {
         ArgumentNullException.ThrowIfNull(table);
+        if (inputFocus is not null && (inputFocus.Target is null || inputFocus.SelectionStart < 0 || inputFocus.SelectionLength < 0))
+            throw new ArgumentException("入力欄の選択位置が不正です。", nameof(inputFocus));
         if (selection.Row < 0 || selection.Column < 0 || selection.RowCount < 1 || selection.ColumnCount < 1
             || selection.Row >= table.RowCount || selection.Column >= table.ColumnCount
             || selection.RowCount > table.RowCount - selection.Row
@@ -41,7 +46,7 @@ public sealed class TableDesignerSnapshot
             throw new ArgumentException("選択範囲には結合セル全体を含めてください。", nameof(selection));
         return new(TableSnapshot.Capture(table), selection, anchorRow, anchorColumn,
             rowsInput ?? table.RowCount.ToString(CultureInfo.InvariantCulture),
-            columnsInput ?? table.ColumnCount.ToString(CultureInfo.InvariantCulture));
+            columnsInput ?? table.ColumnCount.ToString(CultureInfo.InvariantCulture), inputFocus);
     }
 
     // Navigation alone is not an edit and must not consume Undo or discard Redo.

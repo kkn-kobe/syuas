@@ -36,6 +36,12 @@ public sealed class TableDesignerViewModel : ObservableObject
     private bool changing;
     private int bindingGeneration;
     private TableDesignerSnapshot? pendingSizeInput;
+    private TableDesignerSnapshot? pendingTextInput;
+    private TableInputTarget? activeInput;
+    private TableInputFocus? inputFocus;
+    private string? pendingTextDescription;
+    private string? pendingTextOriginal;
+    private bool textComposing;
     private string rowsInput;
     private string columnsInput;
     private int anchorRow;
@@ -56,16 +62,16 @@ public sealed class TableDesignerViewModel : ObservableObject
             if (!int.TryParse(RowsInput, out var rows) || !int.TryParse(ColumnsInput, out var columns))
                 throw new ArgumentException("行数と列数は整数で入力してください。");
             Definition.Resize(rows, columns);
-        }, structural: true, includeSizeInput: true), _ => CanEdit);
-        MergeCommand = new(_ => Mutate("セル結合", () => Definition.Merge(Selection), structural: true), _ => CanEdit && Definition.Cells.Count(Selection.Intersects) > 1);
-        UnmergeCommand = new(_ => Mutate("結合解除", () => Definition.Unmerge(Selection), structural: true), _ => CanEdit && Definition.Cells.Any(c => Selection.Intersects(c) && (c.RowSpan > 1 || c.ColumnSpan > 1)));
-        AddRowCommand = new(_ => Mutate("行追加", () => Definition.InsertRow(Selection.LastRow + 1), structural: true), _ => CanEdit && Definition.RowCount < TableDefinition.MaxRows);
-        DeleteRowCommand = new(_ => Mutate("行削除", () => Definition.DeleteRow(Selection.Row), structural: true), _ => CanEdit && Definition.RowCount > 1);
-        AddColumnCommand = new(_ => Mutate("列追加", () => Definition.InsertColumn(Selection.LastColumn + 1), structural: true), _ => CanEdit && Definition.ColumnCount < TableDefinition.MaxColumns);
-        DeleteColumnCommand = new(_ => Mutate("列削除", () => Definition.DeleteColumn(Selection.Column), structural: true), _ => CanEdit && Definition.ColumnCount > 1);
+        }, structural: true, includeSizeInput: true), _ => CanModifyStructure);
+        MergeCommand = new(_ => Mutate("セル結合", () => Definition.Merge(Selection), structural: true), _ => CanModifyStructure && Definition.Cells.Count(Selection.Intersects) > 1);
+        UnmergeCommand = new(_ => Mutate("結合解除", () => Definition.Unmerge(Selection), structural: true), _ => CanModifyStructure && Definition.Cells.Any(c => Selection.Intersects(c) && (c.RowSpan > 1 || c.ColumnSpan > 1)));
+        AddRowCommand = new(_ => Mutate("行追加", () => Definition.InsertRow(Selection.LastRow + 1), structural: true), _ => CanModifyStructure && Definition.RowCount < TableDefinition.MaxRows);
+        DeleteRowCommand = new(_ => Mutate("行削除", () => Definition.DeleteRow(Selection.Row), structural: true), _ => CanModifyStructure && Definition.RowCount > 1);
+        AddColumnCommand = new(_ => Mutate("列追加", () => Definition.InsertColumn(Selection.LastColumn + 1), structural: true), _ => CanModifyStructure && Definition.ColumnCount < TableDefinition.MaxColumns);
+        DeleteColumnCommand = new(_ => Mutate("列削除", () => Definition.DeleteColumn(Selection.Column), structural: true), _ => CanModifyStructure && Definition.ColumnCount > 1);
         UndoCommand = new(_ => RestoreHistory(redo: false), _ => CanUndo);
         RedoCommand = new(_ => RestoreHistory(redo: true), _ => CanRedo);
-        ConfirmCommand = new(_ => Confirm(), _ => Snippet is not null && CanEdit);
+        ConfirmCommand = new(_ => Confirm(), _ => Snippet is not null && CanModifyStructure);
         SetSelection(0, 0);
         Rebuild();
         PublishState();
@@ -73,6 +79,7 @@ public sealed class TableDesignerViewModel : ObservableObject
 
     public event EventHandler? StructureChanged;
     public event EventHandler? CloseRequested;
+    public event EventHandler<TableFocusEventArgs>? FocusRequested;
     public TableDefinition Definition { get; }
     public bool IsEditing => applyEdit is not null;
     public string DialogTitle => IsEditing ? "表を再編集 — SYUAS" : "表デザイナー";
@@ -87,7 +94,7 @@ public sealed class TableDesignerViewModel : ObservableObject
     public string Title
     {
         get => Definition.Title;
-        set { if (Definition.Title != value) Mutate("表タイトル", () => Definition.Title = value); }
+        set { if (Definition.Title != value) EditText(new(TableInputKind.Title), "表タイトル", Definition.Title, value, () => Definition.Title = value); }
     }
     public bool HasHeader
     {
@@ -110,18 +117,27 @@ public sealed class TableDesignerViewModel : ObservableObject
     public RelayCommand UndoCommand { get; }
     public RelayCommand RedoCommand { get; }
     private bool CanEdit => !applying && !changing;
-    public bool CanUndo => CanEdit && (pendingSizeInput is not null || history.CanUndo);
-    public bool CanRedo => CanEdit && pendingSizeInput is null && history.CanRedo;
-    public int UndoCount => history.UndoCount + (pendingSizeInput is null ? 0 : 1);
-    public int RedoCount => pendingSizeInput is null ? history.RedoCount : 0;
-    public string? UndoDescription => pendingSizeInput is null ? history.UndoDescription : "表サイズの入力";
-    public string? RedoDescription => pendingSizeInput is null ? history.RedoDescription : null;
+    public bool CanModifyStructure => CanEdit && !textComposing;
+    public bool IsTextComposing => textComposing;
+    public bool CanCancel => !textComposing;
+    public string InputStatus => textComposing ? "文字変換中：確定後に元に戻す・表の操作を使用できます。" : "";
+    private bool HasPendingInput => pendingSizeInput is not null || pendingTextInput is not null;
+    public bool CanUndo => CanModifyStructure && (HasPendingInput || history.CanUndo);
+    public bool CanRedo => CanModifyStructure && !HasPendingInput && history.CanRedo;
+    public int UndoCount => history.UndoCount + (HasPendingInput ? 1 : 0);
+    public int RedoCount => HasPendingInput ? 0 : history.RedoCount;
+    public string? UndoDescription => pendingTextInput is not null ? pendingTextDescription
+        : pendingSizeInput is not null ? "表サイズの入力" : history.UndoDescription;
+    public string? RedoDescription => HasPendingInput ? null : history.RedoDescription;
+    public string UndoToolTip => CanUndo ? $"元に戻す：{UndoDescription} (Ctrl+Z)" : "元に戻す (Ctrl+Z)";
+    public string RedoToolTip => CanRedo ? $"やり直し：{RedoDescription} (Ctrl+Y / Ctrl+Shift+Z)" : "やり直し (Ctrl+Y / Ctrl+Shift+Z)";
     public RelayCommand ConfirmCommand { get; }
     public RelayCommand InsertCommand => ConfirmCommand;
 
     private void Confirm()
     {
         if (!ConfirmCommand.CanExecute(null)) return;
+        EndTextEdit();
         CommitSizeInput();
         applying = true;
         RefreshCommands();
@@ -144,7 +160,8 @@ public sealed class TableDesignerViewModel : ObservableObject
 
     public void SelectCell(int row, int column, bool extend = false)
     {
-        if (!CanEdit) return;
+        if (!CanModifyStructure) return;
+        EndTextEdit();
         SetSelection(row, column, extend);
         UpdateSelection();
         RefreshCommands();
@@ -175,7 +192,78 @@ public sealed class TableDesignerViewModel : ObservableObject
     }
 
     private TableDesignerSnapshot CaptureState() => TableDesignerSnapshot.Capture(
-        Definition, Selection, anchorRow, anchorColumn, rowsInput, columnsInput);
+        Definition, Selection, anchorRow, anchorColumn, rowsInput, columnsInput, inputFocus);
+
+    public void BeginTextEdit(TableInputFocus focus)
+    {
+        if (!CanEdit) return;
+        ArgumentNullException.ThrowIfNull(focus);
+        if (textComposing && activeInput != focus.Target) return;
+        if (activeInput != focus.Target) EndTextEdit();
+        activeInput = focus.Target;
+        inputFocus = focus;
+    }
+
+    public void UpdateInputFocus(TableInputFocus focus)
+    {
+        if (CanEdit) inputFocus = focus;
+    }
+
+    public void EndTextEdit()
+    {
+        if (!CanEdit || textComposing) return;
+        CommitTextInput();
+        activeInput = null;
+        RefreshCommands();
+    }
+
+    public void SetTextComposition(bool composing)
+    {
+        if (!CanEdit || composing == textComposing) return;
+        textComposing = composing;
+        Changed(nameof(IsTextComposing)); Changed(nameof(CanCancel)); Changed(nameof(InputStatus));
+        RefreshCommands();
+    }
+
+    private void CommitTextInput()
+    {
+        if (pendingTextInput is null) return;
+        history.Record(pendingTextDescription!, pendingTextInput, CaptureState());
+        pendingTextInput = null;
+        pendingTextOriginal = null;
+        pendingTextDescription = null;
+    }
+
+    private void EditText(TableInputTarget target, string description, string oldValue, string value, Action action)
+    {
+        if (!CanEdit) return;
+        ArgumentNullException.ThrowIfNull(value);
+        if (activeInput != target)
+        {
+            if (!textComposing) Mutate(description, action);
+            return;
+        }
+        changing = true;
+        try
+        {
+            CommitSizeInput();
+            if (pendingTextInput is null)
+            {
+                pendingTextInput = CaptureState();
+                pendingTextOriginal = oldValue;
+                pendingTextDescription = description;
+            }
+            action();
+            if (value == pendingTextOriginal)
+            {
+                pendingTextInput = null;
+                pendingTextOriginal = null;
+                pendingTextDescription = null;
+            }
+            PublishState();
+        }
+        finally { changing = false; RefreshCommands(); }
+    }
 
     private void SetSizeInput(string value, bool rows)
     {
@@ -184,6 +272,7 @@ public sealed class TableDesignerViewModel : ObservableObject
         changing = true;
         try
         {
+            CommitTextInput();
             pendingSizeInput ??= CaptureState();
             if (rows) rowsInput = value; else columnsInput = value;
             if (rowsInput == pendingSizeInput.RowsInput && columnsInput == pendingSizeInput.ColumnsInput)
@@ -202,7 +291,8 @@ public sealed class TableDesignerViewModel : ObservableObject
 
     private void Mutate(string description, Action action, bool structural = false, bool includeSizeInput = false)
     {
-        if (!CanEdit) return;
+        if (!CanModifyStructure) return;
+        EndTextEdit();
         changing = true;
         try
         {
@@ -248,7 +338,11 @@ public sealed class TableDesignerViewModel : ObservableObject
             }
             PublishState();
         }
-        finally { changing = false; RefreshCommands(); }
+        finally
+        {
+            changing = false; RefreshCommands();
+            if (structural) FocusRequested?.Invoke(this, new(inputFocus));
+        }
     }
 
     private void RestoreHistory(bool redo)
@@ -257,13 +351,19 @@ public sealed class TableDesignerViewModel : ObservableObject
         changing = true;
         try
         {
+            CommitTextInput();
+            activeInput = null;
             CommitSizeInput();
             var restored = redo ? history.Redo() : history.Undo();
             if (restored is null) return;
             RestoreViewState(restored);
             PublishState();
         }
-        finally { changing = false; RefreshCommands(); }
+        finally
+        {
+            changing = false; RefreshCommands();
+            FocusRequested?.Invoke(this, new(inputFocus));
+        }
     }
 
     private void RestoreViewState(TableDesignerSnapshot snapshot)
@@ -273,6 +373,7 @@ public sealed class TableDesignerViewModel : ObservableObject
         Selection = snapshot.Selection;
         anchorRow = snapshot.AnchorRow;
         anchorColumn = snapshot.AnchorColumn;
+        inputFocus = snapshot.InputFocus;
         Rebuild();
     }
 
@@ -282,7 +383,7 @@ public sealed class TableDesignerViewModel : ObservableObject
         Cells = Definition.Cells.OrderBy(c => c.Row).ThenBy(c => c.Column)
             .Select(c => new TableCellViewModel(c, Definition, value =>
             {
-                if (generation == bindingGeneration) Mutate("セル入力", () => c.Text = value);
+                if (generation == bindingGeneration) EditText(new(TableInputKind.Cell, c.Row, c.Column), "セル入力", c.Text, value, () => c.Text = value);
             })).ToArray();
         ColumnWidths = Enumerable.Range(0, Definition.ColumnCount).Select(column =>
         {
@@ -293,7 +394,8 @@ public sealed class TableDesignerViewModel : ObservableObject
                     && field.Value != Definition.ColumnWidths[column])
                 {
                     if (!CanEdit) { field.Value = Definition.ColumnWidths[column]; return; }
-                    Mutate("列幅", () => Definition.SetColumnWidth(column, field.Value));
+                    EditText(new(TableInputKind.ColumnWidth, Column: column), "列幅", Definition.ColumnWidths[column], field.Value,
+                        () => Definition.SetColumnWidth(column, field.Value));
                 }
             };
             return field;
@@ -322,6 +424,7 @@ public sealed class TableDesignerViewModel : ObservableObject
         Changed(nameof(CanUndo)); Changed(nameof(CanRedo));
         Changed(nameof(UndoCount)); Changed(nameof(RedoCount));
         Changed(nameof(UndoDescription)); Changed(nameof(RedoDescription));
+        Changed(nameof(UndoToolTip)); Changed(nameof(RedoToolTip)); Changed(nameof(CanModifyStructure));
         UndoCommand.Refresh(); RedoCommand.Refresh();
         ResizeCommand.Refresh(); ConfirmCommand.Refresh();
         MergeCommand.Refresh(); UnmergeCommand.Refresh();
