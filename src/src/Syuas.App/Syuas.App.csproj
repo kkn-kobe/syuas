@@ -14,14 +14,14 @@
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="Highlighting/AsciiDoc.xshd" />
-    <EmbeddedResource Include="../../docs/recovery-guide.txt" LogicalName="Syuas.RecoveryGuide.txt" />
-    <EmbeddedResource Include="../../docs/table-reediting-guide.txt" LogicalName="Syuas.TableReeditingGuide.txt" />
+    <EmbeddedResource Include="../../../docs/recovery-guide.txt" LogicalName="Syuas.RecoveryGuide.txt" />
+    <EmbeddedResource Include="../../../docs/table-reediting-guide.txt" LogicalName="Syuas.TableReeditingGuide.txt" />
     <Resource Include="Assets/Syuas.ico" />
     <Resource Include="Assets/Syuas.png" />
     <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Licenses/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <EmbeddedResource Include="../../LICENSE" LogicalName="Syuas.Licenses.SYUAS.txt" />
+    <Content Include="../../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../../LICENSE" LogicalName="Syuas.Licenses.SYUAS.txt" />
     <EmbeddedResource Include="Licenses/AvalonEdit-LICENSE.txt" LogicalName="Syuas.Licenses.AvalonEdit.txt" />
     <EmbeddedResource Include="Licenses/WebView2-LICENSE.txt" LogicalName="Syuas.Licenses.WebView2.txt" />
     <EmbeddedResource Include="Licenses/WebView2-NOTICE.txt" LogicalName="Syuas.Licenses.WebView2Notice.txt" />
