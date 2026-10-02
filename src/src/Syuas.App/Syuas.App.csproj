@@ -6,6 +6,8 @@
     <AssemblyName>SYUAS</AssemblyName>
     <ApplicationIcon>Assets/Syuas.ico</ApplicationIcon>
     <RootNamespace>Syuas.App</RootNamespace>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 KUBOYAMA Kyota</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Syuas.Core/Syuas.Core.csproj" />
@@ -18,5 +20,11 @@
     <Resource Include="Assets/Syuas.png" />
     <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Licenses/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="Syuas.Licenses.SYUAS.txt" />
+    <EmbeddedResource Include="Licenses/AvalonEdit-LICENSE.txt" LogicalName="Syuas.Licenses.AvalonEdit.txt" />
+    <EmbeddedResource Include="Licenses/WebView2-LICENSE.txt" LogicalName="Syuas.Licenses.WebView2.txt" />
+    <EmbeddedResource Include="Licenses/WebView2-NOTICE.txt" LogicalName="Syuas.Licenses.WebView2Notice.txt" />
+    <EmbeddedResource Include="PreviewAssets/ASCIIDOCTOR-LICENSE.txt" LogicalName="Syuas.Licenses.Asciidoctor.txt" />
   </ItemGroup>
 </Project>

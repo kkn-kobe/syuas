@@ -288,6 +288,15 @@ Remove-Item Env:SYUAS_WEBVIEW_SMOKE
 22. 同じ表を再編集し、キャンセル・変更なしの適用で本文や未保存状態が変わらないことを確認する。右クリックメニューからも開けることを確認する。
 23. `samples/table-reediting/unsupported/` の表では、再編集できない理由と位置を表示し、元のソースが変わらないことを確認する。
 
+## ライセンス
+
+SYUASは [MIT License](LICENSE) で提供します。著作権者は **KUBOYAMA Kyota**（2026年）です。
+外部ライブラリにはそれぞれのライセンスが適用されます。
+
+「ヘルプ → SYUASについて → ライセンス…」から、SYUAS、Asciidoctor.js、AvalonEdit、WebView2 SDKの順にライセンス全文を閲覧できます。WebView2 SDKでは「第三者通知」タブも表示します。本文は選択・コピー可能で、オフラインでも閲覧できます。「閉じる」またはEscで元の画面に戻ります。
+
+ルートの `LICENSE` はビルド・公開出力にも同梱します。画面の本文は配布用文書と同じファイルをアプリ内に埋め込んで使用します。
+
 ## 依存ライブラリ
 
 エディタは [AvalonEdit 6.3.1.120](https://www.nuget.org/packages/AvalonEdit/6.3.1.120)（MIT License）を使用しています。

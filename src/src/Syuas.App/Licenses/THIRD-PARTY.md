@@ -39,5 +39,9 @@ version, update the bundled documents and version/source information here, and
 verify that both build and publish outputs contain these files. This directory
 is copied automatically by `Syuas.App.csproj`.
 
-These third-party terms do not set the license for SYUAS itself. If distributing
-additional runtimes, retain their own applicable licenses and third-party notices.
+SYUAS itself is licensed under the MIT License, Copyright (c) 2026 KUBOYAMA Kyota;
+see [LICENSE](../LICENSE) in the distribution (the repository root `LICENSE` in
+source checkouts). Third-party components retain their respective licenses.
+The application's license dialog embeds the same license and notice files for
+offline viewing. If distributing additional runtimes, retain their own applicable
+licenses and third-party notices.
