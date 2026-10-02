@@ -17,5 +17,6 @@
     <Resource Include="Assets/Syuas.ico" />
     <Resource Include="Assets/Syuas.png" />
     <Content Include="PreviewAssets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Licenses/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
