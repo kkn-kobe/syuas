@@ -229,6 +229,24 @@ public sealed class ExternalChangeServiceTests
         Assert.Equal(0, notifications);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StorageExceptionIsReportedAndLaterCheckRecovers(bool denied)
+    {
+        using var f = new Fixture();
+        f.Files.BeforeCompare = () => throw (denied ? new UnauthorizedAccessException("denied") : new IOException("offline"));
+        await f.Service.TickAsync();
+        Assert.Equal(3, f.Files.Checks);
+        Assert.Equal(FileComparisonStatus.Unavailable, f.Service.Current!.Status);
+        Assert.True(f.Service.IsNotificationVisible);
+        f.Files.BeforeCompare = null;
+        f.Clock.Advance(10000);
+        await f.Service.TickAsync();
+        Assert.Equal(FileComparisonStatus.Unchanged, f.Service.Current!.Status);
+        Assert.False(f.Service.IsNotificationVisible);
+    }
+
     internal static FileFingerprint Fingerprint(string text) => FileFingerprint.FromBytes(System.Text.Encoding.UTF8.GetBytes(text));
     internal sealed class ManualClock : TimeProvider
     {

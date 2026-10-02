@@ -115,11 +115,11 @@ public sealed class ExternalChangeService : IDisposable
             if (shouldRestart) RestartWatcher(session.FilePath);
             var result = await Task.Run(async () =>
             {
-                FileComparison comparison = files.Compare(session.Baseline!);
+                FileComparison comparison = CompareSafely(session.Baseline!);
                 for (var attempt = 0; attempt < 2 && comparison.Status is FileComparisonStatus.Unavailable or FileComparisonStatus.Missing; attempt++)
                 {
                     await Task.Delay(retryDelay).ConfigureAwait(false);
-                    comparison = files.Compare(session.Baseline!);
+                    comparison = CompareSafely(session.Baseline!);
                 }
                 return comparison;
             });
@@ -134,6 +134,15 @@ public sealed class ExternalChangeService : IDisposable
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
         finally { lock (gate) checking = false; }
+    }
+
+    private FileComparison CompareSafely(FileBaseline baseline)
+    {
+        try { return files.Compare(baseline); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new(FileComparisonStatus.Unavailable, Error: e.Message);
+        }
     }
 
     private void RestartWatcher(string? path)

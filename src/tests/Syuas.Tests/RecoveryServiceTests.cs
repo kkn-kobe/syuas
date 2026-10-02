@@ -44,8 +44,10 @@ public sealed class RecoveryServiceTests
         Assert.Equal(31, Assert.Single(store.Writes).Revision);
     }
 
-    [Fact]
-    public async Task FailedWriteKeepsPreviousDataAndRetriesWithoutFurtherTyping()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedWriteKeepsPreviousDataAndRetriesWithoutFurtherTyping(bool accessDenied)
     {
         var clock = new ManualClock();
         using var store = new MemoryStore();
@@ -57,11 +59,13 @@ public sealed class RecoveryServiceTests
         session = session with { Revision = 2 };
         service.Track(session);
         store.FailWrite = true;
+        store.DenyWrite = accessDenied;
         clock.Advance(5);
         await service.TickAsync(() => Capture(session, clock));
         Assert.Contains("更新できません", service.Status);
         Assert.Equal(1, Assert.Single(store.Writes).Revision);
         store.FailWrite = false;
+        store.DenyWrite = false;
         clock.Advance(5);
         await service.TickAsync(() => Capture(session, clock));
         Assert.Equal(2, store.Writes.Count);
@@ -146,6 +150,59 @@ public sealed class RecoveryServiceTests
         Assert.Single(store.Active);
     }
 
+    [Fact]
+    public async Task ConfirmedCloseReportsFailedCleanupAndStillReleasesLease()
+    {
+        var clock = new ManualClock();
+        using var store = new MemoryStore();
+        using var service = new RecoveryService(store, clock);
+        var session = Session();
+        service.Track(session);
+        clock.Advance(5);
+        await service.TickAsync(() => Capture(session, clock));
+        store.FailRetire = true;
+        Assert.False(await service.CloseAsync());
+        Assert.Contains("再表示", service.Status);
+        Assert.Single(store.Active);
+        Assert.True(store.Disposed);
+    }
+
+    [Fact]
+    public async Task CloseRetriesFailedCleanupOfPreviouslySwitchedDocument()
+    {
+        var clock = new ManualClock();
+        using var store = new MemoryStore();
+        using var service = new RecoveryService(store, clock);
+        var old = Session();
+        service.Track(old);
+        clock.Advance(5);
+        await service.TickAsync(() => Capture(old, clock));
+        store.FailRetire = true;
+        service.Track(Session() with { IsModified = false });
+        await service.DrainAsync();
+        Assert.Single(store.Active);
+        store.FailRetire = false;
+        Assert.True(await service.CloseAsync());
+        Assert.Empty(store.Active);
+    }
+
+    [Fact]
+    public async Task FailureOnOldDocumentIsReportedEvenIfCurrentCleanupSucceeds()
+    {
+        var clock = new ManualClock();
+        using var store = new MemoryStore();
+        using var service = new RecoveryService(store, clock);
+        var old = Session();
+        service.Track(old);
+        clock.Advance(5);
+        await service.TickAsync(() => Capture(old, clock));
+        store.FailRetireId = old.DocumentId;
+        service.Track(Session() with { IsModified = false });
+        Assert.False(await service.CloseAsync());
+        Assert.Single(store.Active);
+        Assert.Contains("再表示", service.Status);
+    }
+
     private static DocumentSession Session() => new(Guid.NewGuid(), 1, null, null, true);
     private static RecoverySnapshot Capture(DocumentSession session, TimeProvider clock)
         => new(session.DocumentId, session.Revision, clock.GetUtcNow(), "draft", session.Baseline, 0, 0, 0);
@@ -163,15 +220,23 @@ public sealed class RecoveryServiceTests
         public Dictionary<Guid, RecoverySnapshot> Active { get; } = [];
         public List<string> Operations { get; } = [];
         public bool FailWrite { get; set; }
+        public bool DenyWrite { get; set; }
+        public bool FailRetire { get; set; }
+        public Guid? FailRetireId { get; set; }
         public bool Disposed { get; private set; }
         public Action? BeforeWrite { get; init; }
         public void Write(RecoverySnapshot snapshot)
         {
             BeforeWrite?.Invoke();
+            if (DenyWrite) throw new UnauthorizedAccessException("Access denied");
             if (FailWrite) throw new IOException("Disk full");
             Writes.Add(snapshot); Active[snapshot.DocumentId] = snapshot; Operations.Add("write");
         }
-        public void Retire(Guid documentId) { Active.Remove(documentId); Operations.Add("retire"); }
+        public void Retire(Guid documentId)
+        {
+            if (FailRetire || FailRetireId == documentId) throw new IOException("Cleanup locked");
+            Active.Remove(documentId); Operations.Add("retire");
+        }
         public IReadOnlyList<RecoveryCandidate> ListCandidates() => [];
         public RecoverySnapshot Claim(RecoveryKey key) => throw new NotSupportedException();
         public void Discard(RecoveryKey key) => throw new NotSupportedException();

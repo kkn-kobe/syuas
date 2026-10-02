@@ -192,6 +192,23 @@ public sealed class RecoveryIntegrationTests
         Assert.Equal(second.Key, Assert.Single(await f.Model.ListRecoveryAsync()).Key);
     });
 
+    [Fact]
+    public void FailedCloseCleanupShowsNoticeAndCopyRemainsRecoverable() => Sta.RunAsync(async () =>
+    {
+        using var f = new Fixture();
+        f.Editor.Replace(0, 0, "draft to discard");
+        f.Clock.Advance(5);
+        await f.Model.TickRecoveryAsync();
+        var copy = Assert.Single(System.IO.Directory.GetFiles(f.RecoveryRoot, "*.current.json", SearchOption.AllDirectories));
+        f.Dialogs.SaveDecision = SaveDecision.Discard;
+        Assert.True(f.Model.CanClose());
+        using (var locked = File.Open(copy, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await f.Model.CloseRecoveryAsync();
+        Assert.Contains("再表示", Assert.Single(f.Dialogs.Information));
+        using var reader = new RecoveryStore(f.RecoveryRoot);
+        Assert.Equal("draft to discard", Assert.Single(reader.ListCandidates()).Snapshot!.Text);
+    });
+
     private sealed class Fixture : IDisposable
     {
         public string Directory { get; } = Path.Combine(Path.GetTempPath(), "SYUAS.Tests", Guid.NewGuid().ToString("N"));
@@ -232,13 +249,14 @@ public sealed class RecoveryIntegrationTests
         public string? SavePath { get; set; }
         public List<FileObservation> Conflicts { get; } = [];
         public List<string> Errors { get; } = [];
+        public List<string> Information { get; } = [];
         public string? ChooseOpenFile() => null;
         public string? ChooseSaveFile(string? currentPath) => SavePath;
         public SaveDecision ConfirmSave(string documentName) => SaveDecision;
         public SaveConflictDecision ResolveSaveConflict(string path, FileObservation observation, bool isCurrentFile)
         { Conflicts.Add(observation); return SaveConflictDecision.Cancel; }
         public void ShowError(string message) => Errors.Add(message);
-        public void ShowInformation(string message) { }
+        public void ShowInformation(string message) => Information.Add(message);
     }
     private sealed class History : IRecentFilesStore
     {

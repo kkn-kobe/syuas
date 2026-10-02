@@ -2,6 +2,8 @@
 
 AsciiDocソースを直接編集するWindowsデスクトップエディタです。AGENTS.mdのPhase 1〜Phase 4を実装しています。
 
+自動復元・外部変更検出は第1〜第5段階まで実装しています。操作とエラー時の対処は [利用説明](docs/recovery-guide.txt)、検証方法と確認範囲は [障害検証](docs/failure-validation.md) を参照してください。利用説明はアプリ内の「ヘルプ → 自動復元と外部変更の使い方」からも開けます。
+
 ## 開発・起動
 
 Windows 11、.NET 8 SDK以降（.NET 8をターゲットにビルドできるもの）、.NET 8 Desktop Runtimeが必要です。初回の復元にはNuGetへの接続が必要です。
@@ -193,11 +195,25 @@ SYUAS自身の保存通知も内容で照合し、時間だけで通知を無視
 
 監視対象は現在の文書です。include先・画像の変更によるプレビュー自動更新は対象外です。共有フォルダーの遅延や連続した外部更新などによって検出時刻は前後します。
 
+## 障害時の検証と利用説明（第5段階）
+
+退避の書き込み・置換・整理・復元途中の失敗、監視のI/O例外、保存や文書切り替えとの競合を回帰テストで確認します。整理できなかった復元用コピーは確認済みの終了時に再試行し、残る場合は次回に再表示される可能性を案内します。
+
+強制終了と複数プロセスの検証は次のコマンドで実行できます。利用者の復元データには触れず、テスト用の子プロセスと一時フォルダーを使います。
+
+```powershell
+dotnet run --project tests/Syuas.RecoveryProbe/Syuas.RecoveryProbe.csproj --no-restore
+```
+
+詳細な障害シナリオ、実施結果、未検証の環境条件は [障害検証](docs/failure-validation.md) を参照してください。[利用説明](docs/recovery-guide.txt) はアプリに埋め込むため、配布後もヘルプから参照できます。
+
 ## 構成
 
 - `src/Syuas.Core`: エディタ非依存のモデル・Generator、ViewModel、ファイル操作、履歴、検索、挿入範囲・改行・カーソル位置の制御。
 - `src/Syuas.App`: WPF View、Windowsダイアログ、入力フォーム、AvalonEdit Adapter、埋め込みXSHD、WebView2、同梱プレビューエンジン。
 - `tests/Syuas.Tests`: ファイル・検索・文書ライフサイクル、記法生成、入力検証、実際のAvalonEditでの挿入・Undo、WPF画面・ダイアログの読み込みとバインディングのテスト。Windows上で実行します。
+- `tests/Syuas.RecoveryProbe`: 子プロセスを使用した強制終了・再復元・排他の検証ツール。
+- `docs`: 自動復元・外部変更の利用説明と障害検証手順。
 
 表の構造は `TableDefinition` / `TableCell` が管理し、`AsciiDocTableGenerator` はWPFに依存しません。テストでは2×2表、100×50表、ヘッダー、列幅、縦横結合、結合範囲の追加削除、特殊文字、混合操作後のセル範囲整合性を検証します。
 

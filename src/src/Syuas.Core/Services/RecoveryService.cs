@@ -13,7 +13,10 @@ public sealed class RecoveryService : IDisposable
     private DateTimeOffset? firstUnwritten, lastChange, lastAttempt;
     private long? writtenRevision;
     private bool writing, stopped, disposed;
-    private string status = "自動復元: 待機中";
+    // Accessed only by the serialized storage queue; retry failed cleanup at confirmed close.
+    private readonly HashSet<Guid> pendingRetirements = [];
+    private bool closeSucceeded = true;
+    private volatile string status = "自動復元: 待機中";
     public string Status => status;
     public RecoveryService(IRecoveryStore store, TimeProvider? clock = null, IFileService? files = null)
     {
@@ -61,6 +64,8 @@ public sealed class RecoveryService : IDisposable
             var success = await Enqueue(() =>
             {
                 store.Write(snapshot);
+                // New edits supersede an earlier failed cleanup for this document.
+                pendingRetirements.Remove(snapshot.DocumentId);
                 status = $"復元用コピー: {snapshot.CapturedAt.ToLocalTime():HH:mm:ss}";
             });
             if (success && tracked?.DocumentId == snapshot.DocumentId)
@@ -73,7 +78,15 @@ public sealed class RecoveryService : IDisposable
         finally { writing = false; }
     }
 
-    private void Retire(Guid id) => _ = Enqueue(() => { store.Retire(id); status = "自動復元: 待機中"; });
+    private void Retire(Guid id) => _ = Enqueue(() => RetireCore(id));
+
+    private void RetireCore(Guid id)
+    {
+        pendingRetirements.Add(id);
+        store.Retire(id);
+        pendingRetirements.Remove(id);
+        status = "自動復元: 待機中";
+    }
 
     // Queue all mutations, including retirement, behind any in-flight write.
     private Task<bool> Enqueue(Action action)
@@ -115,13 +128,27 @@ public sealed class RecoveryService : IDisposable
     }
 
     public Task DrainAsync() => tail;
-    public async Task CloseAsync()
+    public async Task<bool> CloseAsync()
     {
-        if (stopped) { await tail; return; }
+        if (stopped) { await tail; return closeSucceeded; }
         stopped = true;
-        if (tracked is not null) Retire(tracked.DocumentId);
+        await Enqueue(() =>
+        {
+            if (tracked is not null) pendingRetirements.Add(tracked.DocumentId);
+            foreach (var id in pendingRetirements.ToArray())
+            {
+                try { RetireCore(id); }
+                catch (Exception e) when (IsStorageError(e))
+                {
+                    status = $"復元用データを整理できません: {e.Message}";
+                }
+            }
+            closeSucceeded = pendingRetirements.Count == 0;
+            if (!closeSucceeded) status = "一部の復元用コピーを整理できませんでした。次回起動時に再表示される場合があります。";
+        });
         await tail;
         Dispose();
+        return closeSucceeded;
     }
 
     public void Dispose()

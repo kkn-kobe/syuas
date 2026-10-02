@@ -101,6 +101,21 @@ public sealed class WindowTests
             RenderScreenshot(comparisonPanel, comparisonDialog.Background, 1080, 660, comparisonImage);
         comparisonDialog.Close();
 
+        var helpDialog = new RecoveryHelpDialog();
+        var guide = Assert.IsType<TextBox>(helpDialog.FindName("GuideText"));
+        Assert.True(guide.IsReadOnly);
+        Assert.Contains("%LOCALAPPDATA%", guide.Text);
+        Assert.Contains("再表示", guide.Text);
+        var helpPanel = (FrameworkElement)helpDialog.Content;
+        helpPanel.Measure(new Size(780, 640));
+        helpPanel.Arrange(new Rect(0, 0, 780, 640));
+        helpPanel.UpdateLayout();
+        Assert.True(guide.ActualWidth > 600);
+        Assert.True(guide.ActualHeight > 400);
+        if (Environment.GetEnvironmentVariable("SYUAS_RECOVERY_HELP_SCREENSHOT") is { Length: > 0 } helpImage)
+            RenderScreenshot(helpPanel, helpDialog.Background, 780, 640, helpImage);
+        helpDialog.Close();
+
         foreach (var status in Enum.GetValues<FileObservationStatus>())
         {
             var conflict = new SaveConflictViewModel(@"C:\Documents\日本語のフォルダー\manual.adoc",

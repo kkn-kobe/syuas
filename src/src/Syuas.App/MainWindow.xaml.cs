@@ -225,4 +225,5 @@ public partial class MainWindow : Window
     }
 
     private void OnAbout(object sender, RoutedEventArgs e) => new Views.AboutDialog { Owner = this }.ShowDialog();
+    private void OnRecoveryHelp(object sender, RoutedEventArgs e) => new RecoveryHelpDialog { Owner = this }.ShowDialog();
 }

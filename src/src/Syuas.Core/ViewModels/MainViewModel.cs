@@ -223,7 +223,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (recovery is null) return;
         IsRecoveryBusy = true;
-        await recovery.CloseAsync();
+        if (!await recovery.CloseAsync())
+            dialogs.ShowInformation("復元用コピーの整理を完了できませんでした。\n次回起動時に、保存済み・破棄済みの文書が復元候補に再表示される場合があります。内容を確認して不要な候補を破棄してください。\n元ファイルへの保存結果は変わりません。詳しくは「ヘルプ → 自動復元と外部変更の使い方」を参照してください。");
     }
 
     public bool CanClose() => !IsRecoveryBusy && ConfirmDiscard();

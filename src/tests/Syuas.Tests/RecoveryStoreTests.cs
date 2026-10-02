@@ -174,6 +174,56 @@ public sealed class RecoveryStoreTests : IDisposable
         Assert.Equal(snapshot, Assert.Single(reader.ListCandidates()).Snapshot);
     }
 
+    [Fact]
+    public void FailedAtomicReplacementLeavesBothGenerationsAndRemovesTemporaryFile()
+    {
+        using var source = new RecoveryStore(root);
+        var first = Snapshot("first");
+        var second = first with { Revision = 2, Text = "second" };
+        source.Write(first);
+        source.Write(second);
+        using (var locked = File.Open(FilePath(source.SessionId, first.DocumentId, "current"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            Assert.Throws<IOException>(() => source.Write(first with { Revision = 3, Text = "not committed" }));
+        Assert.Empty(Directory.GetFiles(Path.Combine(root, source.SessionId.ToString("N")), "*.tmp"));
+        source.Dispose();
+        using var reader = new RecoveryStore(root);
+        Assert.Equal(second, Assert.Single(reader.ListCandidates()).Snapshot);
+        File.Delete(FilePath(source.SessionId, first.DocumentId, "current"));
+        Assert.Equal(first, Assert.Single(reader.ListCandidates()).Snapshot);
+    }
+
+    [Fact]
+    public void FailedClaimWriteDoesNotRetireSource()
+    {
+        using var source = new RecoveryStore(root);
+        var snapshot = Snapshot("source");
+        source.Write(snapshot);
+        source.Dispose();
+        using var reader = new RecoveryStore(root);
+        reader.Write(snapshot with { Text = "existing destination copy" });
+        var key = Assert.Single(reader.ListCandidates()).Key;
+        using (var locked = File.Open(FilePath(reader.SessionId, snapshot.DocumentId, "current"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            Assert.Throws<IOException>(() => reader.Claim(key));
+        Assert.Equal(snapshot, Assert.Single(reader.ListCandidates()).Snapshot);
+    }
+
+    [Fact]
+    public void FailedSourceCleanupAfterClaimKeepsBothDurableCopies()
+    {
+        using var source = new RecoveryStore(root);
+        var snapshot = Snapshot("recoverable");
+        source.Write(snapshot);
+        source.Dispose();
+        using var reader = new RecoveryStore(root);
+        var key = Assert.Single(reader.ListCandidates()).Key;
+        using (var locked = File.Open(FilePath(source.SessionId, snapshot.DocumentId, "current"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            Assert.Throws<IOException>(() => reader.Claim(key));
+        reader.Dispose();
+        using var restarted = new RecoveryStore(root);
+        Assert.Equal(2, restarted.ListCandidates().Count);
+        Assert.All(restarted.ListCandidates(), c => Assert.Equal(snapshot, c.Snapshot));
+    }
+
     private string FilePath(Guid sessionId, Guid documentId, string generation)
         => Path.Combine(root, sessionId.ToString("N"), $"{documentId:N}.{generation}.json");
     public void Dispose() { if (Directory.Exists(root)) Directory.Delete(root, true); }

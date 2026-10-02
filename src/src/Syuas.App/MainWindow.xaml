@@ -89,7 +89,11 @@
         <MenuItem Header="行番号" IsCheckable="True" IsChecked="{Binding ShowLineNumbers, ElementName=Editor}" />
         <MenuItem Header="右端で折り返す" IsCheckable="True" IsChecked="{Binding WordWrap, ElementName=Editor}" />
       </MenuItem>
-      <MenuItem Header="ヘルプ(_H)"><MenuItem Header="SYUASについて" Click="OnAbout" /></MenuItem>
+      <MenuItem Header="ヘルプ(_H)">
+        <MenuItem Header="自動復元と外部変更の使い方" Click="OnRecoveryHelp" />
+        <Separator />
+        <MenuItem Header="SYUASについて" Click="OnAbout" />
+      </MenuItem>
     </Menu>
     <ToolBarTray DockPanel.Dock="Top" Background="#EEF1F5">
       <ToolBar Background="#EEF1F5">
