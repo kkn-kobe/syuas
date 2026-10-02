@@ -45,6 +45,14 @@ public sealed class DocumentSessionController : IDisposable
 
     public FileObservation Observe(string path) => files.Observe(path);
 
+    public void Reload(string path)
+    {
+        var snapshot = files.ReadSnapshot(path);
+        var caret = Math.Min(editor.CaretOffset, snapshot.Text.Length);
+        Load(snapshot);
+        editor.Select(caret, 0);
+    }
+
     public void Restore(RecoverySnapshot snapshot)
     {
         changingDocument = true;

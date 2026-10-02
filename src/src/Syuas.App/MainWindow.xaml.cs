@@ -19,7 +19,8 @@ public partial class MainWindow : Window
     private readonly MainViewModel viewModel;
     private readonly DispatcherTimer documentUpdate = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer recoveryUpdate = new() { Interval = TimeSpan.FromSeconds(1) };
-    private bool recoveryInitialized, recoveryDialogOpen, closingApproved, closed;
+    private readonly DispatcherTimer externalUpdate = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private bool recoveryInitialized, recoveryDialogOpen, externalDialogOpen, closingApproved, closed;
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase) { ".adoc", ".asciidoc", ".ad", ".asc", ".txt" };
 
     public MainWindow()
@@ -29,7 +30,8 @@ public partial class MainWindow : Window
         Editor.Options.IndentationSize = 4;
         Editor.Options.ConvertTabsToSpaces = false;
         adapter = new(Editor);
-        viewModel = new(adapter, new Utf8FileService(), new WindowsDialogs(this),
+        var files = new Utf8FileService();
+        viewModel = new(adapter, files, new WindowsDialogs(this),
             new RecentFilesStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SYUAS", "recent-files.json")), new InputAssistanceDialogs(this));
         viewModel.Assistance!.FocusRequested += (_, _) => Editor.Focus();
         viewModel.Structure.FocusRequested += (_, _) => Editor.Focus();
@@ -38,11 +40,15 @@ public partial class MainWindow : Window
         documentUpdate.Tick += OnDocumentUpdate;
         recoveryUpdate.Tick += OnRecoveryTick;
         DataContext = viewModel;
+        viewModel.EnableExternalMonitoring(new ExternalChangeService(new FileSystemChangeMonitor(), files));
+        externalUpdate.Tick += OnExternalTick;
+        Activated += OnActivated;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Editor.Focus();
+        externalUpdate.Start();
         if (recoveryInitialized) return;
         recoveryInitialized = true;
         try
@@ -58,11 +64,12 @@ public partial class MainWindow : Window
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (closingApproved) return;
-        if (recoveryDialogOpen || !viewModel.CanClose()) { e.Cancel = true; return; }
+        if (recoveryDialogOpen || externalDialogOpen || !viewModel.CanClose()) { e.Cancel = true; return; }
         if (!viewModel.HasRecovery) return;
         e.Cancel = true;
         IsEnabled = false;
         recoveryUpdate.Stop();
+        externalUpdate.Stop();
         await viewModel.CloseRecoveryAsync();
         closingApproved = true;
         _ = Dispatcher.BeginInvoke(new Action(Close));
@@ -70,16 +77,35 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         closed = true;
+        externalUpdate.Stop(); externalUpdate.Tick -= OnExternalTick;
+        Activated -= OnActivated;
         recoveryUpdate.Stop(); recoveryUpdate.Tick -= OnRecoveryTick;
         documentUpdate.Stop(); documentUpdate.Tick -= OnDocumentUpdate;
         Editor.TextChanged -= OnSourceChanged; viewModel.PropertyChanged -= OnViewModelChanged;
         HtmlPreview.Dispose(); viewModel.Dispose(); adapter.Dispose();
     }
     private async void OnRecoveryTick(object? sender, EventArgs e) => await viewModel.TickRecoveryAsync();
+    private async void OnExternalTick(object? sender, EventArgs e) => await viewModel.CheckExternalChangesAsync();
+    private async void OnActivated(object? sender, EventArgs e) => await viewModel.CheckExternalChangesAsync(force: true);
+    private async void OnCheckExternal(object sender, RoutedEventArgs e) => await viewModel.CheckExternalChangesAsync(force: true);
+    private void OnReloadExternal(object sender, RoutedEventArgs e) { viewModel.ReloadFromDisk(); Editor.Focus(); }
+    private async void OnCompareExternal(object sender, RoutedEventArgs e)
+    {
+        if (externalDialogOpen || recoveryDialogOpen || closed) return;
+        externalDialogOpen = true;
+        IsEnabled = false;
+        try
+        {
+            var comparison = await viewModel.ReadComparisonAsync();
+            IsEnabled = true;
+            if (comparison is not null && !closed) new DocumentComparisonDialog(comparison) { Owner = this }.ShowDialog();
+        }
+        finally { externalDialogOpen = false; if (!closed) { IsEnabled = true; Editor.Focus(); } }
+    }
     private async void OnRecoveryDocuments(object sender, RoutedEventArgs e) => await ShowRecoveryCandidates(false);
     private async Task ShowRecoveryCandidates(bool startup)
     {
-        if (recoveryDialogOpen || closed) return;
+        if (recoveryDialogOpen || externalDialogOpen || closed) return;
         recoveryDialogOpen = true;
         try
         {

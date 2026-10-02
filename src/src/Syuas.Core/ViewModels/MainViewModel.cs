@@ -12,6 +12,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IEditorAdapter editor;
     private readonly DocumentSessionController documents;
+    private readonly IFileService files;
     private readonly IUserDialogs dialogs;
     private readonly IRecentFilesStore recentStore;
     private string searchText = "";
@@ -23,10 +24,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private RecoveryService? recovery;
     private bool isRecoveryBusy;
     private string recoveryStatus = "";
+    private ExternalChangeService? externalChanges;
+    private bool disposed;
 
     public MainViewModel(IEditorAdapter editor, IFileService files, IUserDialogs dialogs, IRecentFilesStore recentStore, IInputAssistanceDialogs? inputDialogs = null)
     {
         this.editor = editor;
+        this.files = files;
         documents = new(editor, files);
         documents.SessionChanged += OnSessionChanged;
         this.dialogs = dialogs;
@@ -43,6 +47,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         FindNextCommand = new(_ => FindNext(), _ => SearchText.Length > 0);
         ReplaceCommand = new(_ => Replace(), _ => SearchText.Length > 0);
         ReplaceAllCommand = new(_ => ReplaceAll(), _ => SearchText.Length > 0);
+        DismissExternalChangeCommand = new(_ => externalChanges?.Dismiss());
+        RevealExternalChangeCommand = new(_ => externalChanges?.Reveal());
         editor.StateChanged += EditorStateChanged;
         try { foreach (var path in recentStore.Load()) RecentFiles.Add(path); }
         catch (Exception e) when (IsStorageError(e) || e is JsonException) { /* History must not prevent editing. */ }
@@ -62,6 +68,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand FindNextCommand { get; }
     public RelayCommand ReplaceCommand { get; }
     public RelayCommand ReplaceAllCommand { get; }
+    public RelayCommand DismissExternalChangeCommand { get; }
+    public RelayCommand RevealExternalChangeCommand { get; }
     public DocumentSession Session => documents.Session;
     public string? FilePath => Session.FilePath;
     public string DocumentName => FilePath is null ? "無題" : Path.GetFileName(FilePath);
@@ -77,6 +85,89 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsRecoveryBusy { get => isRecoveryBusy; private set { isRecoveryBusy = value; Changed(); } }
     public string RecoveryStatus { get => recoveryStatus; private set { recoveryStatus = value; Changed(); } }
     public bool HasRecovery => recovery is not null;
+    public bool IsExternalChangeVisible => externalChanges?.IsNotificationVisible == true;
+    public bool HasExternalChange => externalChanges?.Current is { Status: not FileComparisonStatus.Unchanged };
+    public bool CanReadExternalFile => externalChanges?.Current?.Status == FileComparisonStatus.Modified;
+    public string ExternalChangeMessage => externalChanges?.Current?.Status switch
+    {
+        FileComparisonStatus.Modified => "このファイルは外部で変更されています。編集中の内容は保持しています。",
+        FileComparisonStatus.Missing => "元ファイルが見つかりません。削除または移動された可能性があります。編集中の内容は保持しています。",
+        FileComparisonStatus.Unavailable => "元ファイルの状態を確認できません。ロックやアクセス権を確認してください。",
+        _ => ""
+    };
+    public string ExternalChangeDetail => externalChanges?.Current?.Error ?? FilePath ?? "";
+    public string MonitoringStatus => externalChanges?.MonitoringStatus ?? "";
+    public string ExternalChangeStatus => externalChanges?.Current?.Status switch
+    {
+        FileComparisonStatus.Modified => "外部変更あり",
+        FileComparisonStatus.Missing => "元ファイルなし",
+        FileComparisonStatus.Unavailable => "確認不能",
+        _ => ""
+    };
+
+    public void EnableExternalMonitoring(ExternalChangeService service)
+    {
+        if (externalChanges is not null) throw new InvalidOperationException("外部変更の監視は開始済みです。");
+        externalChanges = service;
+        externalChanges.StateChanged += OnExternalChangeState;
+        externalChanges.Track(Session);
+    }
+
+    public async Task CheckExternalChangesAsync(bool force = false)
+    {
+        if (disposed || externalChanges is null || IsRecoveryBusy) return;
+        if (force) externalChanges.RequestCheck();
+        await externalChanges.TickAsync();
+    }
+
+    public bool ReloadFromDisk()
+    {
+        var path = FilePath;
+        if (path is null || IsRecoveryBusy || !ConfirmDiscard()) return false;
+        try
+        {
+            // Read successfully before changing text, Undo history or the recovery copy.
+            documents.Reload(path);
+            Remember(path);
+            DocumentChanged();
+            return true;
+        }
+        catch (Exception e) when (IsStorageError(e))
+        {
+            dialogs.ShowError($"再読み込みできませんでした。現在の文書は保持しています。\n{e.Message}");
+            externalChanges?.RequestCheck();
+            return false;
+        }
+    }
+
+    public async Task<DocumentComparison?> ReadComparisonAsync()
+    {
+        var path = FilePath;
+        if (path is null || IsRecoveryBusy || disposed) return null;
+        var id = Session.DocumentId;
+        var text = editor.Text;
+        try
+        {
+            var disk = await Task.Run(() => files.ReadSnapshot(path));
+            if (disposed || Session.DocumentId != id || !SamePath(path, FilePath)) return null;
+            return new(path, text, disk, DateTimeOffset.Now);
+        }
+        catch (Exception e) when (IsStorageError(e))
+        {
+            if (!disposed && Session.DocumentId == id)
+                dialogs.ShowError($"比較用のファイルを読み込めませんでした。現在の文書は保持しています。\n{e.Message}");
+            externalChanges?.RequestCheck();
+            return null;
+        }
+    }
+
+    private void OnExternalChangeState(object? sender, EventArgs e)
+    {
+        Changed(nameof(IsExternalChangeVisible)); Changed(nameof(HasExternalChange));
+        Changed(nameof(CanReadExternalFile)); Changed(nameof(ExternalChangeMessage));
+        Changed(nameof(ExternalChangeDetail)); Changed(nameof(MonitoringStatus));
+        Changed(nameof(ExternalChangeStatus));
+    }
 
     public void EnableRecovery(RecoveryService service)
     {
@@ -289,11 +380,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void OnSessionChanged(object? sender, EventArgs e)
     {
         recovery?.Track(Session);
+        externalChanges?.Track(Session);
         Changed(nameof(Session));
     }
 
     private void DocumentChanged()
     {
+        externalChanges?.Track(Session, force: true);
         Changed(nameof(FilePath)); Changed(nameof(DocumentName)); Changed(nameof(Title));
         SearchStatus = "";
     }
@@ -303,6 +396,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
     public void Dispose()
     {
+        disposed = true;
+        if (externalChanges is not null)
+        {
+            externalChanges.StateChanged -= OnExternalChangeState;
+            externalChanges.Dispose();
+        }
         editor.StateChanged -= EditorStateChanged;
         documents.SessionChanged -= OnSessionChanged;
         documents.Dispose();

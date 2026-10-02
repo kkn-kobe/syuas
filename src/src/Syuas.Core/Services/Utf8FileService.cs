@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using Syuas.Core.Models;
 
 namespace Syuas.Core.Services;
@@ -6,10 +7,18 @@ namespace Syuas.Core.Services;
 public sealed class Utf8FileService : IFileService
 {
     private static readonly UTF8Encoding Encoding = new(false, true);
+    // Share this instance between the editor and its observer. A background read must not
+    // race our own replacement/backup housekeeping and report a transient sharing failure.
+    private readonly object accessGate = new();
 
     public string Read(string path) => ReadSnapshot(path).Text;
 
     public FileSnapshot ReadSnapshot(string path)
+    {
+        lock (accessGate) return ReadSnapshotCore(path);
+    }
+
+    private static FileSnapshot ReadSnapshotCore(string path)
     {
         var fullPath = Path.GetFullPath(path);
         var bytes = ReadBytes(fullPath);
@@ -21,6 +30,11 @@ public sealed class Utf8FileService : IFileService
     public void Write(string path, string text) => WriteSnapshot(path, text);
 
     public FileBaseline WriteSnapshot(string path, string text)
+    {
+        lock (accessGate) return WriteSnapshotCore(path, text);
+    }
+
+    private static FileBaseline WriteSnapshotCore(string path, string text)
     {
         var fullPath = Path.GetFullPath(path);
         var bytes = Encoding.GetBytes(text);
@@ -57,11 +71,18 @@ public sealed class Utf8FileService : IFileService
 
     public FileObservation Observe(string path)
     {
+        lock (accessGate) return ObserveCore(path);
+    }
+
+    private static FileObservation ObserveCore(string path)
+    {
         try
         {
             var fullPath = Path.GetFullPath(path);
             // Do not decode: an external non-UTF-8 edit is still a content change.
-            var current = new FileBaseline(fullPath, FileFingerprint.FromBytes(ReadBytes(fullPath)));
+            using var stream = OpenRead(fullPath);
+            var current = new FileBaseline(fullPath,
+                new FileFingerprint(stream.Length, Convert.ToHexString(SHA256.HashData(stream))));
             return new(FileObservationStatus.Present, current);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
@@ -75,6 +96,11 @@ public sealed class Utf8FileService : IFileService
     }
 
     public FileSaveResult WriteChecked(string path, string text, FileBaseline? expected, bool preserveBackup = false)
+    {
+        lock (accessGate) return WriteCheckedCore(path, text, expected, preserveBackup);
+    }
+
+    private FileSaveResult WriteCheckedCore(string path, string text, FileBaseline? expected, bool preserveBackup)
     {
         var fullPath = Path.GetFullPath(path);
         if (expected is not null && !string.Equals(fullPath, expected.FullPath, StringComparison.OrdinalIgnoreCase))
@@ -133,10 +159,13 @@ public sealed class Utf8FileService : IFileService
 
     private static byte[] ReadBytes(string path)
     {
-        // A writer/deleter cannot change the file during this read. Sharing failures remain errors.
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        // Prevent in-place writes, but allow atomic replacement while we read the old handle.
+        // Text and hash still describe the same bytes; background observation must not block Save.
+        using var stream = OpenRead(path);
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         return buffer.ToArray();
     }
+
+    private static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
 }

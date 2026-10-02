@@ -23,6 +23,9 @@
         <MenuItem Header="保存(_S)" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
         <MenuItem Header="名前を付けて保存(_A)..." Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
         <MenuItem Header="復元可能な文書…" Click="OnRecoveryDocuments" />
+        <MenuItem Header="外部変更を確認" Click="OnCheckExternal" />
+        <MenuItem Header="ディスクから再読み込み" Click="OnReloadExternal" ToolTip="未保存の変更を確認して再読み込みします。Undo履歴はリセットされます。" />
+        <MenuItem Header="ディスク上の内容と比較…" Click="OnCompareExternal" />
         <Separator />
         <MenuItem Header="最近使用したファイル(_R)" ItemsSource="{Binding RecentFiles}">
           <MenuItem.ItemContainerStyle>
@@ -121,7 +124,25 @@
       <StatusBarItem Content="UTF-8  |  AsciiDoc" />
       <Separator />
       <StatusBarItem><TextBlock Text="{Binding RecoveryStatus}" ToolTip="{Binding RecoveryStatus}" MaxWidth="420" TextTrimming="CharacterEllipsis" /></StatusBarItem>
+      <StatusBarItem><TextBlock Text="{Binding MonitoringStatus}" ToolTip="{Binding MonitoringStatus}" MaxWidth="220" TextTrimming="CharacterEllipsis" /></StatusBarItem>
+      <StatusBarItem Visibility="{Binding HasExternalChange, Converter={StaticResource BooleanToVisibility}}">
+        <Button Content="{Binding ExternalChangeStatus}" Command="{Binding RevealExternalChangeCommand}" ToolTip="{Binding ExternalChangeMessage}" />
+      </StatusBarItem>
     </StatusBar>
+    <Border x:Name="ExternalChangeBanner" DockPanel.Dock="Top" Padding="12,9" Background="#FFF3CD"
+            Visibility="{Binding IsExternalChangeVisible, Converter={StaticResource BooleanToVisibility}}">
+      <StackPanel>
+        <TextBlock Text="{Binding ExternalChangeMessage}" TextWrapping="Wrap" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding ExternalChangeDetail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ExternalChangeDetail}" Margin="0,4,0,4" />
+        <WrapPanel>
+          <Button Content="内容を比較…" Click="OnCompareExternal" IsEnabled="{Binding CanReadExternalFile}" />
+          <Button Content="再読み込み" Click="OnReloadExternal" IsEnabled="{Binding CanReadExternalFile}" ToolTip="未保存の変更を確認して再読み込みします。Undo履歴はリセットされます。" />
+          <Button Content="別名保存…" Command="{Binding SaveAsCommand}" />
+          <Button Content="再確認" Click="OnCheckExternal" />
+          <Button Content="編集を続ける" Command="{Binding DismissExternalChangeCommand}" ToolTip="通知を閉じます。保存時の外部変更チェックは継続します。" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
     <Border DockPanel.Dock="Top" Padding="10,7" Background="#EEF3F9" Visibility="{Binding IsSearchVisible, Converter={StaticResource BooleanToVisibility}}">
       <StackPanel>
         <WrapPanel VerticalAlignment="Center">

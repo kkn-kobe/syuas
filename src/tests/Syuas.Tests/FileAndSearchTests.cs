@@ -230,6 +230,33 @@ public sealed class FileAndSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task BackgroundComparisonDoesNotPreventAtomicSaves()
+    {
+        var files = new Utf8FileService();
+        var path = Path.Combine(directory, "parallel.adoc");
+        var text = new string('x', 256 * 1024);
+        var original = files.WriteSnapshot(path, text);
+        var comparisons = Task.Run(() =>
+        {
+            for (var i = 0; i < 30; i++)
+                Assert.Contains(files.Compare(original).Status, new[] { FileComparisonStatus.Unchanged, FileComparisonStatus.Modified });
+        });
+        var baseline = original;
+        try
+        {
+            for (var i = 0; i < 20; i++)
+            {
+                var result = files.WriteChecked(path, text + i, baseline);
+                Assert.True(result.Succeeded);
+                baseline = result.Baseline!;
+            }
+        }
+        finally { await comparisons; }
+        Assert.Equal(FileComparisonStatus.Unchanged, files.Compare(baseline).Status);
+        Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Fact]
     public void HistoryPersistsAndDeduplicates()
     {
         var store = new RecentFilesStore(Path.Combine(directory, "settings", "recent.json"));

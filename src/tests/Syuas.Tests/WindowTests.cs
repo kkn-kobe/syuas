@@ -60,7 +60,46 @@ public sealed class WindowTests
         content.UpdateLayout();
         Assert.Equal(0, editorLayout.ColumnDefinitions[0].ActualWidth);
         model.Structure.IsVisible = true;
+        var externalBanner = Assert.IsType<Border>(window.FindName("ExternalChangeBanner"));
+        Assert.Equal(Visibility.Collapsed, externalBanner.Visibility);
+        externalBanner.DataContext = new
+        {
+            IsExternalChangeVisible = true, CanReadExternalFile = true,
+            ExternalChangeMessage = "このファイルは外部で変更されています。編集中の内容は保持しています。",
+            ExternalChangeDetail = @"C:\Documents\日本語のフォルダー\manual.adoc",
+            DismissExternalChangeCommand = new RelayCommand(_ => { }), SaveAsCommand = new RelayCommand(_ => { })
+        };
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        content.Measure(new Size(1120, 700));
+        content.Arrange(new Rect(0, 0, 1120, 700));
+        content.UpdateLayout();
+        Assert.Equal(Visibility.Visible, externalBanner.Visibility);
+        Assert.True(externalBanner.ActualHeight > 60);
+        Assert.Equal(5, Descendants<Button>(externalBanner).Count());
+        if (Environment.GetEnvironmentVariable("SYUAS_EXTERNAL_BANNER_SCREENSHOT") is { Length: > 0 } bannerImage)
+            RenderScreenshot(content, window.Background, 1120, 700, bannerImage);
         window.Close();
+
+        var comparisonText = new DocumentComparison(@"C:\Documents\manual.adoc",
+            "== 操作手順\n\nSYUASで追記した説明です。\n\n* ローカルの変更\n",
+            new("== 操作手順\n\n別のエディタで更新した説明です。\n\n* 外部の変更\n", new(@"C:\Documents\manual.adoc", FileFingerprint.FromBytes("external"u8))), DateTimeOffset.Now);
+        var comparisonDialog = new DocumentComparisonDialog(comparisonText);
+        var comparisonPanel = (FrameworkElement)comparisonDialog.Content;
+        comparisonPanel.Measure(new Size(1080, 660));
+        comparisonPanel.Arrange(new Rect(0, 0, 1080, 660));
+        comparisonDialog.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        comparisonPanel.UpdateLayout();
+        var localPane = Assert.IsType<ICSharpCode.AvalonEdit.TextEditor>(comparisonDialog.FindName("LocalEditor"));
+        var diskPane = Assert.IsType<ICSharpCode.AvalonEdit.TextEditor>(comparisonDialog.FindName("DiskEditor"));
+        Assert.True(localPane.IsReadOnly);
+        Assert.True(diskPane.IsReadOnly);
+        Assert.Equal(comparisonText.EditorText, localPane.Text);
+        Assert.Equal(comparisonText.DiskSnapshot.Text, diskPane.Text);
+        Assert.True(localPane.ActualWidth > 300);
+        Assert.True(diskPane.ActualWidth > 300);
+        if (Environment.GetEnvironmentVariable("SYUAS_COMPARISON_SCREENSHOT") is { Length: > 0 } comparisonImage)
+            RenderScreenshot(comparisonPanel, comparisonDialog.Background, 1080, 660, comparisonImage);
+        comparisonDialog.Close();
 
         foreach (var status in Enum.GetValues<FileObservationStatus>())
         {
@@ -300,6 +339,19 @@ public sealed class WindowTests
             });
         }
         finally { preview.Dispose(); host.Close(); }
+    }
+
+    private static void RenderScreenshot(FrameworkElement panel, Brush backgroundBrush, int width, int height, string path)
+    {
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        var background = new DrawingVisual();
+        using (var drawing = background.RenderOpen()) drawing.DrawRectangle(backgroundBrush, null, new Rect(0, 0, width, height));
+        bitmap.Render(background);
+        bitmap.Render(panel);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var output = File.Create(path);
+        encoder.Save(output);
     }
 
     private static Task<string> InspectPreview(HtmlPreviewControl preview, string script)
