@@ -3,18 +3,27 @@ using Syuas.Core.Services;
 
 namespace Syuas.Core.ViewModels;
 
-public sealed class TableCellViewModel(TableCell cell, TableDefinition table, Action textChanged) : ObservableObject
+public sealed class TableCellViewModel(TableCell cell, TableDefinition table, Action<string> setText) : ObservableObject
 {
     private bool selected;
+    private bool header = table.HasHeader && cell.Row == 0;
     public TableCell Cell => cell;
     public int Row => cell.Row;
     public int Column => cell.Column;
     public int RowSpan => cell.RowSpan;
     public int ColumnSpan => cell.ColumnSpan;
-    public string Text { get => cell.Text; set { cell.Text = value; Changed(); textChanged(); } }
+    public string Text { get => cell.Text; set { if (cell.Text == value) return; setText(value); Changed(); } }
     public string Label => $"{Row + 1}行 {Column + 1}列" + (RowSpan > 1 || ColumnSpan > 1 ? $"  ({RowSpan}行 × {ColumnSpan}列)" : "");
     public bool IsHeader => table.HasHeader && Row == 0;
-    public bool IsSelected { get => selected; internal set { selected = value; Changed(); Changed(nameof(IsHeader)); } }
+    public bool IsSelected
+    {
+        get => selected;
+        internal set
+        {
+            if (selected != value) { selected = value; Changed(); }
+            if (header != IsHeader) { header = IsHeader; Changed(nameof(IsHeader)); }
+        }
+    }
 }
 
 public sealed class TableDesignerViewModel : ObservableObject
@@ -22,7 +31,11 @@ public sealed class TableDesignerViewModel : ObservableObject
     private readonly string newLine;
     private readonly Func<TableEditApplyResult>? applyEdit;
     private readonly int sourceLine;
+    private readonly TableEditHistory history;
     private bool applying;
+    private bool changing;
+    private int bindingGeneration;
+    private TableDesignerSnapshot? pendingSizeInput;
     private string rowsInput;
     private string columnsInput;
     private int anchorRow;
@@ -35,22 +48,27 @@ public sealed class TableDesignerViewModel : ObservableObject
         this.applyEdit = applyEdit;
         this.sourceLine = sourceLine;
         Definition = definition ?? new();
+        history = new(Definition);
         rowsInput = Definition.RowCount.ToString(); columnsInput = Definition.ColumnCount.ToString();
         Selection = new(0, 0, 1, 1);
-        ResizeCommand = new(_ => Mutate(() =>
+        ResizeCommand = new(_ => Mutate("サイズ変更", () =>
         {
             if (!int.TryParse(RowsInput, out var rows) || !int.TryParse(ColumnsInput, out var columns))
                 throw new ArgumentException("行数と列数は整数で入力してください。");
             Definition.Resize(rows, columns);
-        }));
-        MergeCommand = new(_ => Mutate(() => Definition.Merge(Selection)), _ => Definition.Cells.Count(Selection.Intersects) > 1);
-        UnmergeCommand = new(_ => Mutate(() => Definition.Unmerge(Selection)), _ => Definition.Cells.Any(c => Selection.Intersects(c) && (c.RowSpan > 1 || c.ColumnSpan > 1)));
-        AddRowCommand = new(_ => Mutate(() => Definition.InsertRow(Selection.LastRow + 1)), _ => Definition.RowCount < TableDefinition.MaxRows);
-        DeleteRowCommand = new(_ => Mutate(() => Definition.DeleteRow(Selection.Row)), _ => Definition.RowCount > 1);
-        AddColumnCommand = new(_ => Mutate(() => Definition.InsertColumn(Selection.LastColumn + 1)), _ => Definition.ColumnCount < TableDefinition.MaxColumns);
-        DeleteColumnCommand = new(_ => Mutate(() => Definition.DeleteColumn(Selection.Column)), _ => Definition.ColumnCount > 1);
-        ConfirmCommand = new(_ => Confirm(), _ => Snippet is not null && !applying);
+        }, structural: true, includeSizeInput: true), _ => CanEdit);
+        MergeCommand = new(_ => Mutate("セル結合", () => Definition.Merge(Selection), structural: true), _ => CanEdit && Definition.Cells.Count(Selection.Intersects) > 1);
+        UnmergeCommand = new(_ => Mutate("結合解除", () => Definition.Unmerge(Selection), structural: true), _ => CanEdit && Definition.Cells.Any(c => Selection.Intersects(c) && (c.RowSpan > 1 || c.ColumnSpan > 1)));
+        AddRowCommand = new(_ => Mutate("行追加", () => Definition.InsertRow(Selection.LastRow + 1), structural: true), _ => CanEdit && Definition.RowCount < TableDefinition.MaxRows);
+        DeleteRowCommand = new(_ => Mutate("行削除", () => Definition.DeleteRow(Selection.Row), structural: true), _ => CanEdit && Definition.RowCount > 1);
+        AddColumnCommand = new(_ => Mutate("列追加", () => Definition.InsertColumn(Selection.LastColumn + 1), structural: true), _ => CanEdit && Definition.ColumnCount < TableDefinition.MaxColumns);
+        DeleteColumnCommand = new(_ => Mutate("列削除", () => Definition.DeleteColumn(Selection.Column), structural: true), _ => CanEdit && Definition.ColumnCount > 1);
+        UndoCommand = new(_ => RestoreHistory(redo: false), _ => CanUndo);
+        RedoCommand = new(_ => RestoreHistory(redo: true), _ => CanRedo);
+        ConfirmCommand = new(_ => Confirm(), _ => Snippet is not null && CanEdit);
+        SetSelection(0, 0);
         Rebuild();
+        PublishState();
     }
 
     public event EventHandler? StructureChanged;
@@ -64,17 +82,19 @@ public sealed class TableDesignerViewModel : ObservableObject
     public IReadOnlyList<InputField> ColumnWidths { get; private set; } = [];
     public TableSelection Selection { get; private set; }
     public string SelectionLabel => $"選択: {Selection.Row + 1}〜{Selection.LastRow + 1}行 / {Selection.Column + 1}〜{Selection.LastColumn + 1}列";
-    public string RowsInput { get => rowsInput; set { rowsInput = value; Changed(); Refresh(); } }
-    public string ColumnsInput { get => columnsInput; set { columnsInput = value; Changed(); Refresh(); } }
-    public string Title { get => Definition.Title; set { Definition.Title = value; Changed(); Refresh(); } }
+    public string RowsInput { get => rowsInput; set => SetSizeInput(value, rows: true); }
+    public string ColumnsInput { get => columnsInput; set => SetSizeInput(value, rows: false); }
+    public string Title
+    {
+        get => Definition.Title;
+        set { if (Definition.Title != value) Mutate("表タイトル", () => Definition.Title = value); }
+    }
     public bool HasHeader
     {
         get => Definition.HasHeader;
         set
         {
-            try { Definition.HasHeader = value; Refresh(); }
-            catch (ArgumentException e) { Refresh(e.Message); }
-            Changed(); UpdateSelection();
+            if (Definition.HasHeader != value) Mutate("ヘッダー設定", () => Definition.HasHeader = value);
         }
     }
     public string Preview { get; private set; } = "";
@@ -87,14 +107,24 @@ public sealed class TableDesignerViewModel : ObservableObject
     public RelayCommand DeleteRowCommand { get; }
     public RelayCommand AddColumnCommand { get; }
     public RelayCommand DeleteColumnCommand { get; }
+    public RelayCommand UndoCommand { get; }
+    public RelayCommand RedoCommand { get; }
+    private bool CanEdit => !applying && !changing;
+    public bool CanUndo => CanEdit && (pendingSizeInput is not null || history.CanUndo);
+    public bool CanRedo => CanEdit && pendingSizeInput is null && history.CanRedo;
+    public int UndoCount => history.UndoCount + (pendingSizeInput is null ? 0 : 1);
+    public int RedoCount => pendingSizeInput is null ? history.RedoCount : 0;
+    public string? UndoDescription => pendingSizeInput is null ? history.UndoDescription : "表サイズの入力";
+    public string? RedoDescription => pendingSizeInput is null ? history.RedoDescription : null;
     public RelayCommand ConfirmCommand { get; }
     public RelayCommand InsertCommand => ConfirmCommand;
 
     private void Confirm()
     {
         if (!ConfirmCommand.CanExecute(null)) return;
+        CommitSizeInput();
         applying = true;
-        ConfirmCommand.Refresh();
+        RefreshCommands();
         try
         {
             if (applyEdit is not null)
@@ -109,10 +139,18 @@ public sealed class TableDesignerViewModel : ObservableObject
             }
             CloseRequested?.Invoke(this, EventArgs.Empty);
         }
-        finally { applying = false; ConfirmCommand.Refresh(); }
+        finally { applying = false; RefreshCommands(); }
     }
 
     public void SelectCell(int row, int column, bool extend = false)
+    {
+        if (!CanEdit) return;
+        SetSelection(row, column, extend);
+        UpdateSelection();
+        RefreshCommands();
+    }
+
+    private void SetSelection(int row, int column, bool extend = false)
     {
         var cell = Definition.CellAt(row, column);
         if (!extend) { anchorRow = cell.Row; anchorColumn = cell.Column; }
@@ -134,36 +172,134 @@ public sealed class TableDesignerViewModel : ObservableObject
                 right = Math.Max(right, crossed.Column + crossed.ColumnSpan - 1);
             }
         }
-        UpdateSelection();
     }
 
-    private void Mutate(Action action)
+    private TableDesignerSnapshot CaptureState() => TableDesignerSnapshot.Capture(
+        Definition, Selection, anchorRow, anchorColumn, rowsInput, columnsInput);
+
+    private void SetSizeInput(string value, bool rows)
     {
+        if (!CanEdit || value == (rows ? rowsInput : columnsInput)) return;
+        ArgumentNullException.ThrowIfNull(value);
+        changing = true;
         try
         {
-            action();
-            rowsInput = Definition.RowCount.ToString(); columnsInput = Definition.ColumnCount.ToString();
-            Changed(nameof(RowsInput)); Changed(nameof(ColumnsInput));
-            anchorRow = Math.Min(Selection.Row, Definition.RowCount - 1);
-            anchorColumn = Math.Min(Selection.Column, Definition.ColumnCount - 1);
-            Rebuild();
+            pendingSizeInput ??= CaptureState();
+            if (rows) rowsInput = value; else columnsInput = value;
+            if (rowsInput == pendingSizeInput.RowsInput && columnsInput == pendingSizeInput.ColumnsInput)
+                pendingSizeInput = null;
+            PublishState();
         }
-        catch (ArgumentException e) { Refresh(e.Message); }
+        finally { changing = false; RefreshCommands(); }
+    }
+
+    private void CommitSizeInput()
+    {
+        if (pendingSizeInput is null) return;
+        history.Record("表サイズの入力", pendingSizeInput, CaptureState());
+        pendingSizeInput = null;
+    }
+
+    private void Mutate(string description, Action action, bool structural = false, bool includeSizeInput = false)
+    {
+        if (!CanEdit) return;
+        changing = true;
+        try
+        {
+            if (!includeSizeInput) CommitSizeInput();
+            var current = CaptureState();
+            var before = includeSizeInput ? pendingSizeInput ?? current : current;
+            bool changed;
+            try
+            {
+                changed = history.Execute(description, before, () =>
+                {
+                    action();
+                    if (structural)
+                    {
+                        rowsInput = Definition.RowCount.ToString(); columnsInput = Definition.ColumnCount.ToString();
+                        SetSelection(Math.Min(current.Selection.Row, Definition.RowCount - 1),
+                            Math.Min(current.Selection.Column, Definition.ColumnCount - 1));
+                    }
+                    return CaptureState();
+                });
+            }
+            catch (ArgumentException e)
+            {
+                // Execute restored the same Definition instance but replaced its cells.
+                // Keep invalid size drafts available for correction and for Undo.
+                RestoreViewState(current);
+                PublishState(e.Message);
+                return;
+            }
+            catch
+            {
+                RestoreViewState(current);
+                PublishState();
+                throw;
+            }
+            if (includeSizeInput) pendingSizeInput = null;
+            if (changed && structural) Rebuild();
+            if (!changed && structural)
+            {
+                Selection = current.Selection;
+                anchorRow = current.AnchorRow;
+                anchorColumn = current.AnchorColumn;
+            }
+            PublishState();
+        }
+        finally { changing = false; RefreshCommands(); }
+    }
+
+    private void RestoreHistory(bool redo)
+    {
+        if (redo ? !CanRedo : !CanUndo) return;
+        changing = true;
+        try
+        {
+            CommitSizeInput();
+            var restored = redo ? history.Redo() : history.Undo();
+            if (restored is null) return;
+            RestoreViewState(restored);
+            PublishState();
+        }
+        finally { changing = false; RefreshCommands(); }
+    }
+
+    private void RestoreViewState(TableDesignerSnapshot snapshot)
+    {
+        rowsInput = snapshot.RowsInput;
+        columnsInput = snapshot.ColumnsInput;
+        Selection = snapshot.Selection;
+        anchorRow = snapshot.AnchorRow;
+        anchorColumn = snapshot.AnchorColumn;
+        Rebuild();
     }
 
     private void Rebuild()
     {
+        var generation = ++bindingGeneration;
         Cells = Definition.Cells.OrderBy(c => c.Row).ThenBy(c => c.Column)
-            .Select(c => new TableCellViewModel(c, Definition, () => Refresh())).ToArray();
+            .Select(c => new TableCellViewModel(c, Definition, value =>
+            {
+                if (generation == bindingGeneration) Mutate("セル入力", () => c.Text = value);
+            })).ToArray();
         ColumnWidths = Enumerable.Range(0, Definition.ColumnCount).Select(column =>
         {
             var field = new InputField(column.ToString(), $"列 {column + 1}", Definition.ColumnWidths[column]);
-            field.PropertyChanged += (_, _) => { Definition.SetColumnWidth(column, field.Value); Refresh(); };
+            field.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(InputField.Value) && generation == bindingGeneration
+                    && field.Value != Definition.ColumnWidths[column])
+                {
+                    if (!CanEdit) { field.Value = Definition.ColumnWidths[column]; return; }
+                    Mutate("列幅", () => Definition.SetColumnWidth(column, field.Value));
+                }
+            };
             return field;
         }).ToArray();
         Changed(nameof(Cells)); Changed(nameof(ColumnWidths));
-        SelectCell(anchorRow, anchorColumn);
-        Refresh();
+        UpdateSelection();
         StructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -171,6 +307,23 @@ public sealed class TableDesignerViewModel : ObservableObject
     {
         foreach (var cell in Cells) cell.IsSelected = Selection.Contains(cell.Cell);
         Changed(nameof(SelectionLabel));
+    }
+
+    private void PublishState(string? operationError = null)
+    {
+        Changed(nameof(RowsInput)); Changed(nameof(ColumnsInput));
+        Changed(nameof(Title)); Changed(nameof(HasHeader));
+        UpdateSelection();
+        Refresh(operationError);
+    }
+
+    private void RefreshCommands()
+    {
+        Changed(nameof(CanUndo)); Changed(nameof(CanRedo));
+        Changed(nameof(UndoCount)); Changed(nameof(RedoCount));
+        Changed(nameof(UndoDescription)); Changed(nameof(RedoDescription));
+        UndoCommand.Refresh(); RedoCommand.Refresh();
+        ResizeCommand.Refresh(); ConfirmCommand.Refresh();
         MergeCommand.Refresh(); UnmergeCommand.Refresh();
         AddRowCommand.Refresh(); DeleteRowCommand.Refresh(); AddColumnCommand.Refresh(); DeleteColumnCommand.Refresh();
     }

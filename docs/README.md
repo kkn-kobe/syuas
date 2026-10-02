@@ -8,7 +8,7 @@ AsciiDocソースを直接編集するWindowsデスクトップエディタで�
 | --- | --- |
 | [表の再編集の使い方](docs/table-reediting-guide.txt) | 操作方法、対応形式、適用と保存、エラー時の対処 |
 | [表の再編集の設計](docs/table-reediting.md) | Parser・対象範囲・置換処理・画面連携の仕様とAPI |
-| [表デザイナーのUndo／Redo基盤](docs/table-designer-history.md) | Core層の状態保存・復元と履歴API。画面への接続は後続段階 |
+| [表デザイナーのUndo／Redo基盤](docs/table-designer-history.md) | 状態保存・復元、履歴API、ViewModelへの接続。ボタン・ショートカットは後続段階 |
 | [表の互換性検証](docs/table-compatibility-validation.md) | 保存・復元との統合検証、HTML照合の実行方法と実施記録 |
 | [表のサンプル](samples/table-reediting/README.md) | 再編集できる表と対応外の表 |
 | [自動復元と外部変更の使い方](docs/recovery-guide.txt) | 保存・復元・外部変更への対処 |
@@ -97,7 +97,7 @@ UTF-8（BOM有無の両方）を読み込み、BOMなしUTF-8で保存します�
 
 文書へ挿入・適用した変更は1回のUndoで取り消せます。デザイナー内で行う結合・行列削除などの構造変更には専用のUndo／Redoはありません。デザイナー内の未確定の変更は自動復元の対象にも入りません。
 
-開発中の改善として、Core層に [Undo／Redoの基盤](docs/table-designer-history.md) を実装しています。現段階では画面操作に接続していないため、上記の操作上の制限は変わりません。
+開発中の改善として、Core層の [Undo／Redoの基盤](docs/table-designer-history.md) を表デザイナーのViewModelへ接続しています。セル入力・属性変更・構造変更の履歴記録とUndo／Redoコマンドを実装済みです。画面のボタン・ショートカットは後続段階で接続するため、上記の操作上の制限は変わりません。
 
 ## 表の再編集
 
