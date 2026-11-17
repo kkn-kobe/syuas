@@ -1,0 +1,31 @@
+= Mermaid のローカルプレビュー
+
+この文書はインターネットに接続せずにプレビューできます。
+
+.文書作成の流れ
+[mermaid]
+----
+flowchart LR
+    A[文書を編集] --> B[ローカルで描画]
+    B --> C[プレビューを確認]
+    C --> D[保存]
+----
+
+.処理のやり取り
+[mermaid]
+----
+sequenceDiagram
+    participant U as 利用者
+    participant S as SYUAS
+    U->>S: 図の定義を編集
+    S->>S: SVG を生成
+    S-->>U: プレビューを更新
+----
+
+.クラスの関係
+[mermaid]
+----
+classDiagram
+    Document --> Preview
+    Preview --> Diagram
+----

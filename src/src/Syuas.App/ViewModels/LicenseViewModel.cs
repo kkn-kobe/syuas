@@ -22,6 +22,8 @@ public sealed class LicenseViewModel : ObservableObject
             new("SYUAS", typeof(LicenseViewModel).Assembly.GetName().Version?.ToString(3) ?? "", "MIT License",
                 [Read("ライセンス", "SYUAS")]),
             new("Asciidoctor.js", "4.1.0", "MIT License", [Read("ライセンス", "Asciidoctor")]),
+            new("Mermaid", "12.3.0", "MIT / 依存ライブラリは第三者通知参照",
+                [Read("ライセンス", "Mermaid"), Read("第三者通知", "MermaidNotices"), Read("ソースの入手", "MermaidSources")]),
             new("AvalonEdit", "6.3.1.120", "MIT License", [Read("ライセンス", "AvalonEdit")]),
             new("WebView2 SDK", "1.0.4191.47", "BSD 3-Clause",
                 [Read("ライセンス", "WebView2"), Read("第三者通知", "WebView2Notice")])

@@ -111,7 +111,7 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
 
     private void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
-        if (disposed || !e.Source.StartsWith($"https://{AppHost}/", StringComparison.Ordinal)) return;
+        if (disposed || !string.Equals(e.Source, $"https://{AppHost}/index.html", StringComparison.Ordinal)) return;
         using var json = JsonDocument.Parse(e.WebMessageAsJson);
         var message = json.RootElement;
         var type = message.GetProperty("type").GetString();

@@ -1,0 +1,47 @@
+Mermaid 12.3.0 — source availability and redistribution
+
+SYUAS's independent application code remains under the MIT License.
+Third-party components keep their own licenses. Commercial use is permitted
+under the respective license terms. The MIT license on SYUAS does not relicense
+the third-party components.
+
+This distribution selects Apache-2.0 for DOMPurify and EPL-2.0 for elkjs.
+The GPL alternative for elkjs is not selected.
+
+EPL source availability
+-----------------------
+The following source archives are included in Licenses/MermaidSources next to
+the application. They are available offline; no request to the developer or
+internet access is required to obtain them. Keep them when redistributing.
+ZIP and JAR files can both be opened with a ZIP archive tool.
+
+elkjs 0.12.0 (EPL-2.0): elkjs-0.12.0-source.zip
+  https://github.com/kieler/elkjs/tree/0.12.0
+  https://codeload.github.com/kieler/elkjs/zip/refs/tags/0.12.0
+Eclipse Layout Kernel 0.12.0 (EPL-2.0): elk-0.12.0.zip
+  https://github.com/eclipse-elk/elk/tree/v0.12.0
+  https://codeload.github.com/eclipse-elk/elk/zip/refs/tags/v0.12.0
+EMF GWT common and ecore 2.12.4 (EPL-1.0):
+  emf-common-2.12.4-sources.jar, emf-ecore-2.12.4-sources.jar
+  https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/
+  https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/
+Xtext Xbase library 2.36.0 (EPL-2.0): xbase-lib-2.36.0-sources.jar
+  https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.36.0/
+
+The elkjs archive includes its build scripts and source preprocessing rules.
+ELK is compiled to JavaScript by upstream using GWT. The bundled runtime also
+contains GWT 2.11.0 and Guava 31.1-jre runtime portions under Apache-2.0.
+The full GWT development SDK, Java compiler and Node.js are not distributed.
+Original per-file copyright notices remain in these source archives.
+
+Other components
+----------------
+The exact npm package versions, official download URLs, integrity values and
+license-file hashes are listed in Mermaid-INVENTORY.json. License texts and
+additional embedded notices are reproduced in Mermaid-NOTICES.txt.
+Mermaid itself: https://github.com/mermaid-js/mermaid/tree/mermaid%4012.3.0
+
+The browser bundle is the upstream mermaid 12.3.0 dist/mermaid.min.js. SYUAS
+normalizes its line endings to CRLF only; no library code is otherwise changed.
+Source archives are retained byte-for-byte, including upstream line endings.
+No additional web fonts or icon packs are distributed with this feature.

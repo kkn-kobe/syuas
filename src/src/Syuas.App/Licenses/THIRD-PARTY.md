@@ -32,7 +32,21 @@ in [ASCIIDOCTOR-LICENSE.txt](../PreviewAssets/ASCIIDOCTOR-LICENSE.txt) and
 [THIRD-PARTY.md](../PreviewAssets/THIRD-PARTY.md). Keep those files with the
 application as well.
 
-## Maintenance
+## Mermaid 12.3.0
+
+- Browser renderer: MIT; see [Mermaid-LICENSE.txt](Mermaid-LICENSE.txt).
+- All bundled component notices: [Mermaid-NOTICES.txt](Mermaid-NOTICES.txt).
+- Exact versions and checksums: [Mermaid-INVENTORY.json](Mermaid-INVENTORY.json).
+- EPL source availability: [Mermaid-SOURCES.txt](Mermaid-SOURCES.txt) and the
+  `MermaidSources` directory. Keep all five source archives with distributions.
+- DOMPurify is used under Apache-2.0; elkjs is used under EPL-2.0, not its GPL
+  alternative. Independent SYUAS code retains the MIT license. These licenses
+  permit commercial use subject to their respective conditions.
+- The shipped browser JavaScript has only CRLF line-ending normalization.
+  Source archives are copied byte-for-byte. No third-party runtime code is
+  incorporated into the independent WPF application source.
+
+## Updating bundled components
 
 When updating a dependency, check the license and notices for the exact new
 version, update the bundled documents and version/source information here, and

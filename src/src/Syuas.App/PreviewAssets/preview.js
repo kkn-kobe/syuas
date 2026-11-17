@@ -1,4 +1,5 @@
 import { convert, MemoryLogger, LoggerManager } from './asciidoctor.js';
+import { createMermaidPreview } from './mermaid-preview.js';
 
 const frame = document.getElementById('preview');
 let latestVersion = 0;
@@ -9,7 +10,8 @@ h1,h2,h3,h4,h5,h6{line-height:1.3;color:#174a8b;margin:1.4em 0 .6em}h1{font-size
 a{color:#185fa9}pre{padding:16px;background:#edf2f8;overflow:auto}code{font-family:Consolas,monospace}img{max-width:100%;height:auto}
 table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#e9eff7}
 td p{margin:0}.admonitionblock td.icon{width:80px;font-weight:bold}.admonitionblock{background:#f2f6fb}blockquote{border-left:4px solid #cbd5e1;padding-left:16px}
-.title{font-weight:600;color:#536579}hr{border:0;border-top:1px solid #dce3ec}`;
+.title{font-weight:600;color:#536579}hr{border:0;border-top:1px solid #dce3ec}
+.syuas-mermaid{margin:16px 0;overflow:auto}.mermaid-diagram{display:block;max-width:100%;height:auto}.mermaid-error{padding:12px;border-left:4px solid #b42318;background:#fff1ef;color:#8b1b13;white-space:pre-wrap}`;
 
 window.renderPreview = request => {
   latestVersion = request.version;
@@ -18,16 +20,20 @@ window.renderPreview = request => {
     const logger = new MemoryLogger();
     LoggerManager.setLogger(logger);
     try {
-      const html = await convert(request.source, {
+      const diagrams = createMermaidPreview();
+      const converted = await convert(request.source, {
         safe: request.saved ? 'server' : 'secure', backend: 'html5', standalone: false,
+        extension_registry: diagrams.registry,
         base_dir: request.resourceBase,
         attributes: { showtitle: true, 'max-include-depth': 10, 'webfonts!': '', 'source-highlighter!': '' }
       });
       if (request.version !== latestVersion) return;
+      const { html, messages: diagramMessages } = await diagrams.finish(converted, () => request.version === latestVersion);
+      if (request.version !== latestVersion) return;
       frame.srcdoc = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${request.resourceBase} data:; style-src 'unsafe-inline'; base-uri ${request.resourceBase}; form-action 'none';">
 <base href="${request.resourceBase}/"><style>${css}</style></head><body>${html}</body></html>`;
-      const messages = logger.getMessages().map(entry => entry.getText()).join('\n');
+      const messages = [...logger.getMessages().map(entry => entry.getText()), ...diagramMessages].join('\n');
       send({ type: 'rendered', version: request.version, message: messages });
     } catch (error) {
       if (request.version === latestVersion) send({ type: 'error', version: request.version, message: String(error.message ?? error) });

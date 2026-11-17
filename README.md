@@ -97,6 +97,29 @@ include先などの外部ファイルを変更した場合は、「表示 → �
 
 入力補助で生成できる参照パスと、プレビューで読み込める参照範囲は異なります。
 
+### Mermaid 図のプレビュー
+
+`[mermaid]` を付けたブロックを HTML プレビューで図として表示します。
+
+```asciidoc
+[mermaid]
+----
+flowchart LR
+    A[文書を編集] --> B[ローカルで描画]
+    B --> C[プレビュー]
+----
+```
+
+Mermaid 12.3.0 を同梱し、端末内の WebView2 で SVG を生成します。CDN・描画サーバー・Node.js・Ruby は利用時に不要です。フローチャート、シーケンス図、クラス図、状態遷移図などを記述できます。保存済み文書のローカル include 内も対象です。動作例は [サンプル文書](samples/mermaid/local-preview.adoc) を開いて確認できます。
+
+- `[source,mermaid]` はコードの表示用です。図にする場合は `[mermaid]` を使ってください。
+- エラーは該当する図の位置に表示し、本文や他の図のプレビューは継続します。
+- 1 文書につき最大 32 図、1 図の定義は 20,000 文字まで、Mermaid の辺数上限は 200 です。
+- 図内の設定（YAML frontmatter・`%%{init:...}%%` 等の指令）は受け付けません。外部画像・追加アイコン・HTML ラベル・クリック操作は対象外です。
+- 図は静的な SVG 画像として表示します。文書内スクリプトの禁止と外部リソースの読み込み制限を維持しています。
+
+ライセンス・対応ソースの同梱と検証手順は [Mermaid 対応の設計・配布](docs/mermaid-preview.md) を参照してください。
+
 ### 自動復元・外部変更への対応
 
 自動復元は初期設定で有効です。未保存の編集内容を復元用コピーとして保存し、異常終了後の起動時に復元できます。元の文書ファイルへ自動保存する機能ではないため、通常の保存は `Ctrl+S` で行ってください。復元できるのは最後にコピーが作成された時点までで、表デザイナー内の未適用の変更は対象外です。
@@ -205,6 +228,7 @@ Copyright (c) 2026 KUBOYAMA Kyota
 | --- | --- | --- |
 | AvalonEdit | ソースエディター | MIT |
 | Asciidoctor.js | HTML変換 | MIT |
+| Mermaid | 図のローカル描画 | 本体 MIT。依存ライブラリは同梱の第三者通知参照 |
 | Microsoft.Web.WebView2 SDK | HTMLプレビューの表示 | BSD 3-Clause |
 
 バージョン・出典・ライセンス全文は、[外部ライブラリのライセンスと第三者通知](src/src/Syuas.App/Licenses/THIRD-PARTY.md)および[Asciidoctor.jsの同梱情報](src/src/Syuas.App/PreviewAssets/THIRD-PARTY.md)を参照してください。別途導入するWebView2 Runtimeには、SDKとは別の利用条件が適用されます。

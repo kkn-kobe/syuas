@@ -8,6 +8,10 @@
     <RootNamespace>Syuas.App</RootNamespace>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Copyright (c) 2026 KUBOYAMA Kyota</Copyright>
+    <StartupObject>Syuas.App.App</StartupObject>
+    <NeutralLanguage>ja-JP</NeutralLanguage>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Syuas.Core/Syuas.Core.csproj" />
@@ -26,5 +30,8 @@
     <EmbeddedResource Include="Licenses/WebView2-LICENSE.txt" LogicalName="Syuas.Licenses.WebView2.txt" />
     <EmbeddedResource Include="Licenses/WebView2-NOTICE.txt" LogicalName="Syuas.Licenses.WebView2Notice.txt" />
     <EmbeddedResource Include="PreviewAssets/ASCIIDOCTOR-LICENSE.txt" LogicalName="Syuas.Licenses.Asciidoctor.txt" />
+    <EmbeddedResource Include="Licenses/Mermaid-LICENSE.txt" LogicalName="Syuas.Licenses.Mermaid.txt" />
+    <EmbeddedResource Include="Licenses/Mermaid-NOTICES.txt" LogicalName="Syuas.Licenses.MermaidNotices.txt" />
+    <EmbeddedResource Include="Licenses/Mermaid-SOURCES.txt" LogicalName="Syuas.Licenses.MermaidSources.txt" />
   </ItemGroup>
 </Project>
