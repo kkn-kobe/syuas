@@ -32,14 +32,16 @@ public sealed class MermaidPreviewTests
         Assert.Contains("EMF GWT", notices);
     }
 
-    [Fact]
-    public void OfflineWebViewRendersDiagramsAndKeepsDocumentsInert()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OfflineWebViewRendersDiagramsAndKeepsDocumentsInert(bool openSampleFirst)
     {
         if (Environment.GetEnvironmentVariable("SYUAS_MERMAID_SMOKE") is not { Length: > 0 } output) return;
-        Sta.Run(() => CheckWebView(Path.GetFullPath(output)), timeoutSeconds: 150);
+        Sta.Run(() => CheckWebView(Path.Combine(Path.GetFullPath(output), openSampleFirst ? "sample-first" : "offline-first"), openSampleFirst), timeoutSeconds: 150);
     }
 
-    private static void CheckWebView(string output)
+    private static void CheckWebView(string output, bool openSampleFirst)
     {
         Directory.CreateDirectory(output);
         var dataRoot = Path.Combine(output, "profile-" + Guid.NewGuid().ToString("N"));
@@ -49,10 +51,21 @@ public sealed class MermaidPreviewTests
         host.Show();
         try
         {
-            Render("== Initial");
+            preview.InvalidateDocument();
+            var samplePath = Path.Combine(AppContext.BaseDirectory, "MermaidFixtures", "local-preview.adoc");
+            Render(openSampleFirst ? File.ReadAllText(samplePath) : "== Initial", openSampleFirst ? samplePath : null);
             var browser = (WebView2)preview.FindName("Browser");
             var core = browser.CoreWebView2;
-            // Block the network before Mermaid is loaded for the first time.
+            if (openSampleFirst)
+            {
+                Assert.DoesNotContain("Mermaid 図", preview.StatusText);
+                Assert.Equal(3, Eval<int>("document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram').length"));
+                Assert.True(Eval<bool>("Array.from(document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram')).every(i=>i.complete&&i.naturalWidth>40&&i.naturalHeight>40)"));
+                Assert.Equal("visible", Eval<string>("getComputedStyle(document.getElementById('preview')).visibility"));
+                using var screenshot = File.Create(Path.Combine(output, "local-preview.png"));
+                WaitTask(core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, screenshot));
+            }
+            // The plain-document case blocks the network before Mermaid is first loaded.
             Wait(core.CallDevToolsProtocolMethodAsync("Network.enable", "{}"));
             Wait(core.CallDevToolsProtocolMethodAsync("Network.emulateNetworkConditions",
                 "{\"offline\":true,\"latency\":0,\"downloadThroughput\":0,\"uploadThroughput\":0}"));
@@ -99,10 +112,15 @@ public sealed class MermaidPreviewTests
                     Editing --> Preview
                 ----
                 """;
+            // MainWindow invalidates the preview on document/tab changes.
+            // Reproduce that lifecycle rather than rendering into an already visible WebView.
+            preview.InvalidateDocument();
             Render(source);
             Assert.DoesNotContain("Mermaid 図", preview.StatusText);
             Pump(() => Eval<int>("document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram').length") == 4);
-            Pump(() => Eval<bool>("Array.from(document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram')).every(i=>i.complete&&i.naturalWidth>0&&i.naturalHeight>0)"));
+            Pump(() => Eval<bool>("Array.from(document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram')).every(i=>i.complete&&i.naturalWidth>40&&i.naturalHeight>40)"));
+            Assert.Equal(Visibility.Visible, browser.Visibility);
+            Assert.Equal("visible", Eval<string>("getComputedStyle(document.getElementById('preview')).visibility"));
             var svgs = Eval<string[]>("Array.from(document.getElementById('preview').contentDocument.querySelectorAll('img.mermaid-diagram')).map(i=>decodeURIComponent(i.getAttribute('src').split(',').slice(1).join(',')))");
             Assert.Contains("文書を編集", svgs[0]);
             Assert.Contains("利用者", svgs[1]);

@@ -13,6 +13,11 @@ td p{margin:0}.admonitionblock td.icon{width:80px;font-weight:bold}.admonitionbl
 .title{font-weight:600;color:#536579}hr{border:0;border-top:1px solid #dce3ec}
 .syuas-mermaid{margin:16px 0;overflow:auto}.mermaid-diagram{display:block;max-width:100%;height:auto}.mermaid-error{padding:12px;border-left:4px solid #b42318;background:#fff1ef;color:#8b1b13;white-space:pre-wrap}`;
 
+window.preparePreview = version => {
+  latestVersion = version;
+  frame.style.visibility = 'hidden';
+};
+
 window.renderPreview = request => {
   latestVersion = request.version;
   queue = queue.catch(() => {}).then(async () => {
@@ -30,9 +35,13 @@ window.renderPreview = request => {
       if (request.version !== latestVersion) return;
       const { html, messages: diagramMessages } = await diagrams.finish(converted, () => request.version === latestVersion);
       if (request.version !== latestVersion) return;
+      const loaded = new Promise(resolve => frame.addEventListener('load', resolve, { once: true }));
       frame.srcdoc = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${request.resourceBase} data:; style-src 'unsafe-inline'; base-uri ${request.resourceBase}; form-action 'none';">
 <base href="${request.resourceBase}/"><style>${css}</style></head><body>${html}</body></html>`;
+      await loaded;
+      if (request.version !== latestVersion) return;
+      frame.style.visibility = 'visible';
       const messages = [...logger.getMessages().map(entry => entry.getText()), ...diagramMessages].join('\n');
       send({ type: 'rendered', version: request.version, message: messages });
     } catch (error) {

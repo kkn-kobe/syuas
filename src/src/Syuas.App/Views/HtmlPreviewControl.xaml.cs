@@ -51,6 +51,14 @@ public partial class HtmlPreviewControl : UserControl, IDisposable
             initialization ??= InitializeBrowserAsync();
             await initialization;
             if (disposed || requestVersion != version) return;
+            if (Browser.Visibility != System.Windows.Visibility.Visible)
+            {
+                // Hide the old document inside the page before exposing WebView2.
+                // Mermaid needs a visible browser to measure SVG text and geometry.
+                await Browser.ExecuteScriptAsync($"window.preparePreview({requestVersion});");
+                if (disposed || requestVersion != version) return;
+                Browser.Visibility = System.Windows.Visibility.Visible;
+            }
             var request = JsonSerializer.Serialize(new { source, version = requestVersion, saved = path is not null,
                 resourceBase = $"https://{requestVersion}.document.syuas.local" });
             await Browser.ExecuteScriptAsync($"window.renderPreview({request});");
