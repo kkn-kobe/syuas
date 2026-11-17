@@ -590,6 +590,7 @@ public sealed class WindowTests
                 "(() => { const x = new XMLHttpRequest(); x.open('GET', 'https://1.document.syuas.local/included.adoc', false); try { x.send(); return x.status; } catch { return 0; } })()"));
             PumpUntil(host, () => staleResource.IsCompleted);
             Assert.NotEqual("200", staleResource.Result);
+            VerifyPreviewScroll(host, preview);
         }
         finally
         {
@@ -603,6 +604,72 @@ public sealed class WindowTests
                     path => Directory.Exists(Path.Combine(path, "Data")));
             }
             host.Close();
+        }
+    }
+
+    private static void VerifyPreviewScroll(Window host, HtmlPreviewControl preview)
+    {
+        const string frame = "document.getElementById('preview')";
+        var source = "== Scroll test\n\n++++\n<div style=\"width:1800px;height:100px\">Wide content</div>\n++++\n\n"
+            + string.Join("\n\n", Enumerable.Range(1, 150).Select(i => $"Paragraph {i}"));
+        Render(source);
+        AssertPosition(0, 0);
+        Eval($"{frame}.contentWindow.scrollTo(120, 900)");
+        AssertPosition(120, 900);
+        Render(source + "\n\nEdited text");
+        AssertPosition(120, 900);
+
+        var previous = preview.RenderedVersion;
+        var old = host.Dispatcher.Invoke(() => preview.RenderAsync(source + "\n\nOld update", null));
+        var latest = host.Dispatcher.Invoke(() => preview.RenderAsync(source + "\n\nLatest update", null));
+        PumpUntil(host, () => old.IsCompleted && latest.IsCompleted && preview.RenderedVersion >= previous + 2);
+        old.GetAwaiter().GetResult();
+        latest.GetAwaiter().GetResult();
+        AssertPosition(120, 900);
+
+        // Supersede an update during its iframe load, after the old viewport is gone.
+        // This exercises the page's queue deterministically without timing a host call.
+        Eval($$"""
+            (() => {
+              const request = { source: {{System.Text.Json.JsonSerializer.Serialize(source)}}, saved: false,
+                version: {{preview.RenderedVersion + 1}}, resourceBase: 'https://scroll.document.syuas.local' };
+              {{frame}}.addEventListener('load', () => {
+                window.renderPreview({ ...request, version: request.version + 1, source: request.source + '\n\nQueued final' });
+              }, { once: true });
+              window.renderPreview(request);
+            })()
+            """);
+        PumpUntil(host, () => Eval($"{frame}.contentDocument.body.textContent.includes('Queued final')") == "true"
+            && Eval($"{frame}.contentWindow.scrollY") == "900");
+        AssertPosition(120, 900);
+
+        // Document invalidation resets both pending and displayed positions, even for unsaved tabs.
+        preview.InvalidateDocument();
+        Render(source);
+        AssertPosition(0, 0);
+        Eval($"{frame}.contentWindow.scrollTo(120, 900)");
+        Render("== Short document");
+        AssertPosition(0, 0);
+        Render(source);
+        AssertPosition(0, 0);
+
+        void Render(string text)
+        {
+            var previousVersion = preview.RenderedVersion;
+            var task = host.Dispatcher.Invoke(() => preview.RenderAsync(text, null));
+            PumpUntil(host, () => task.IsCompleted && preview.RenderedVersion > previousVersion);
+            task.GetAwaiter().GetResult();
+        }
+        string Eval(string script)
+        {
+            var task = InspectPreview(preview, script);
+            PumpUntil(host, () => task.IsCompleted);
+            return task.GetAwaiter().GetResult();
+        }
+        void AssertPosition(int x, int y)
+        {
+            Assert.Equal(x.ToString(), Eval($"{frame}.contentWindow.scrollX"));
+            Assert.Equal(y.ToString(), Eval($"{frame}.contentWindow.scrollY"));
         }
     }
 

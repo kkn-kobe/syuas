@@ -4,6 +4,8 @@ import { createMermaidPreview } from './mermaid-preview.js';
 const frame = document.getElementById('preview');
 let latestVersion = 0;
 let queue = Promise.resolve();
+let scrollPosition = { left: 0, top: 0 };
+let canCaptureScroll = false;
 const send = message => window.chrome?.webview?.postMessage(message);
 const css = `body{font:15px/1.65 "Segoe UI","Yu Gothic UI",sans-serif;color:#253247;margin:24px;overflow-wrap:anywhere}
 h1,h2,h3,h4,h5,h6{line-height:1.3;color:#174a8b;margin:1.4em 0 .6em}h1{font-size:28px}h2{font-size:23px;border-bottom:1px solid #dce3ec;padding-bottom:8px}
@@ -15,6 +17,8 @@ td p{margin:0}.admonitionblock td.icon{width:80px;font-weight:bold}.admonitionbl
 
 window.preparePreview = version => {
   latestVersion = version;
+  scrollPosition = { left: 0, top: 0 };
+  canCaptureScroll = false;
   frame.style.visibility = 'hidden';
 };
 
@@ -35,12 +39,21 @@ window.renderPreview = request => {
       if (request.version !== latestVersion) return;
       const { html, messages: diagramMessages } = await diagrams.finish(converted, () => request.version === latestVersion);
       if (request.version !== latestVersion) return;
+      // Capture immediately before replacement, including scrolling during conversion.
+      // Keep this position if a newer request supersedes the pending frame load.
+      if (canCaptureScroll) {
+        scrollPosition = { left: frame.contentWindow.scrollX, top: frame.contentWindow.scrollY };
+      }
+      canCaptureScroll = false;
       const loaded = new Promise(resolve => frame.addEventListener('load', resolve, { once: true }));
       frame.srcdoc = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${request.resourceBase} data:; style-src 'unsafe-inline'; base-uri ${request.resourceBase}; form-action 'none';">
 <base href="${request.resourceBase}/"><style>${css}</style></head><body>${html}</body></html>`;
       await loaded;
       if (request.version !== latestVersion) return;
+      // The frame load includes images (also the generated Mermaid SVG images).
+      frame.contentWindow.scrollTo({ ...scrollPosition, behavior: 'instant' });
+      canCaptureScroll = true;
       frame.style.visibility = 'visible';
       const messages = [...logger.getMessages().map(entry => entry.getText()), ...diagramMessages].join('\n');
       send({ type: 'rendered', version: request.version, message: messages });
