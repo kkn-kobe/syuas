@@ -10,8 +10,8 @@
     <Copyright>Copyright (c) 2026 KUBOYAMA Kyota</Copyright>
     <StartupObject>Syuas.App.App</StartupObject>
     <NeutralLanguage>ja-JP</NeutralLanguage>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
+    <FileVersion>1.1.1.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Syuas.Core/Syuas.Core.csproj" />
